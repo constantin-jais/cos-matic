@@ -50,8 +50,11 @@ pub fn run() -> miette::Result<()> {
             for file in &report.files {
                 println!("{:>9}  {}", file.action.label(), file.path);
             }
+            for warning in &report.warnings {
+                eprintln!("warning: {warning}");
+            }
             if check {
-                println!("ok: {} target(s) up to date", report.files.len());
+                println!("ok: {} file(s) up to date", report.files.len());
             }
             Ok(())
         }

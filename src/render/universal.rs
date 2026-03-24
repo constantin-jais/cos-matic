@@ -1,10 +1,12 @@
-//! The `universal` adapter: renders [`AGENTS.md`](https://agents.md/), the
-//! format read natively by many agents. Output is the domains' content in
-//! priority order, separated by a blank line, normalized to a single trailing
-//! newline so regeneration is byte-stable (important for drift detection).
+//! The `universal` adapter: renders [`AGENTS.md`](https://agents.md/), read
+//! natively by many agents (Claude Code, Cursor, Pi, Codex, …). One file; no
+//! activation metadata, so a domain's `globs` degrade with a warning.
 
-use super::Adapter;
-use crate::ir::ResolvedDomain;
+use super::{
+    Adapter, Feature, RenderInput, RenderOutput, RenderedFile, concatenate, degradation_warnings,
+    require_output_file,
+};
+use crate::error::Result;
 
 pub struct Universal;
 
@@ -13,59 +15,96 @@ impl Adapter for Universal {
         "universal"
     }
 
-    fn render(&self, domains: &[&ResolvedDomain]) -> String {
-        let body = domains
-            .iter()
-            .map(|d| d.content.trim_end())
-            .filter(|c| !c.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n\n");
-        if body.is_empty() {
-            String::new()
-        } else {
-            format!("{body}\n")
-        }
+    fn supports(&self, _feature: Feature) -> bool {
+        false
+    }
+
+    fn render(&self, input: &RenderInput) -> Result<RenderOutput> {
+        let path = require_output_file(input.target)?;
+        Ok(RenderOutput {
+            files: vec![RenderedFile {
+                path: path.to_string(),
+                content: concatenate(input.domains),
+            }],
+            warnings: degradation_warnings(
+                self.id(),
+                input.domains,
+                Feature::GlobActivation,
+                |d| d.globs.is_some(),
+            ),
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::schema::Target;
+    use crate::ir::ResolvedDomain;
 
-    fn d(name: &str, content: &str) -> ResolvedDomain {
+    fn domain(name: &str, content: &str, globs: Option<Vec<String>>) -> ResolvedDomain {
         ResolvedDomain {
             name: name.to_string(),
             priority: 0,
             content: content.to_string(),
+            globs,
+        }
+    }
+
+    fn target() -> Target {
+        Target {
+            name: "agents-md".into(),
+            adapter: "universal".into(),
+            output_file: Some("AGENTS.md".into()),
+            output_dir: None,
+            profile: "default".into(),
         }
     }
 
     #[test]
-    fn concatenates_with_blank_line_and_single_trailing_newline() {
-        let a = d("a", "Alpha\n\n");
-        let b = d("b", "Beta");
-        let out = Universal.render(&[&a, &b]);
-        assert_eq!(out, "Alpha\n\nBeta\n");
+    fn renders_one_file_with_concatenated_content() {
+        let a = domain("a", "Alpha", None);
+        let b = domain("b", "Beta", None);
+        let t = target();
+        let input = RenderInput {
+            project_name: "demo",
+            domains: &[&a, &b],
+            target: &t,
+        };
+        let out = Universal.render(&input).unwrap();
+        assert_eq!(out.files.len(), 1);
+        assert_eq!(out.files[0].path, "AGENTS.md");
+        assert_eq!(out.files[0].content, "Alpha\n\nBeta\n");
+        assert!(out.warnings.is_empty());
     }
 
     #[test]
-    fn empty_selection_renders_empty() {
-        assert_eq!(Universal.render(&[]), "");
+    fn warns_and_still_renders_when_a_domain_uses_globs() {
+        let scoped = domain("scoped", "Scoped", Some(vec!["src/**/*.rs".into()]));
+        let t = target();
+        let input = RenderInput {
+            project_name: "demo",
+            domains: &[&scoped],
+            target: &t,
+        };
+        let out = Universal.render(&input).unwrap();
+        assert_eq!(out.files[0].content, "Scoped\n");
+        assert_eq!(out.warnings.len(), 1);
+        assert!(out.warnings[0].contains("glob activation"));
     }
 
     #[test]
-    fn is_deterministic() {
-        let a = d("a", "X");
-        let b = d("b", "Y");
-        assert_eq!(Universal.render(&[&a, &b]), Universal.render(&[&a, &b]));
-    }
-
-    #[test]
-    fn skips_empty_domain_content() {
-        // A domain whose content is empty (or whitespace-only) must not inject
-        // stray blank lines into the output.
-        let empty = d("empty", "   \n");
-        let real = d("real", "Beta");
-        assert_eq!(Universal.render(&[&empty, &real]), "Beta\n");
+    fn errors_without_output_file() {
+        let t = Target {
+            output_file: None,
+            ..target()
+        };
+        let a = domain("a", "A", None);
+        let input = RenderInput {
+            project_name: "demo",
+            domains: &[&a],
+            target: &t,
+        };
+        assert!(Universal.render(&input).is_err());
     }
 }

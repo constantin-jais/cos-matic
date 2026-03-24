@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::config::parse::parse_file;
 use crate::error::{Error, Result};
 use crate::lock::Lockfile;
-use crate::render::adapter_for;
+use crate::render::{RenderInput, adapter_for};
 use crate::safe_write::{self, WriteAction};
 use crate::{ir, merge, resolve};
 
@@ -49,6 +49,8 @@ pub struct FileReport {
 #[derive(Debug, Clone, Default)]
 pub struct Report {
     pub files: Vec<FileReport>,
+    /// Graceful-degradation warnings collected across all targets (ADR-0007).
+    pub warnings: Vec<String>,
 }
 
 /// Inputs to a generate run.
@@ -96,12 +98,6 @@ pub fn run(opts: &Options) -> Result<Report> {
             target: target.name.clone(),
             adapter: target.adapter.clone(),
         })?;
-        let output_file = target
-            .output_file
-            .as_ref()
-            .ok_or_else(|| Error::MissingOutput {
-                target: target.name.clone(),
-            })?;
 
         let profile = tree
             .profile(&target.profile)
@@ -110,19 +106,33 @@ pub fn run(opts: &Options) -> Result<Report> {
                 profile: target.profile.clone(),
             })?;
         let domains = merge::merge(&tree, profile)?;
-        let content = adapter.render(&domains);
 
-        let action = if opts.check {
-            verify_no_drift(&project_root, output_file, &content)?;
-            Action::Unchanged
-        } else {
-            safe_write::write(&project_root, output_file, &content, &mut lock, opts.force)?.into()
-        };
+        let rendered = adapter.render(&RenderInput {
+            project_name: &manifest.package.name,
+            domains: &domains,
+            target,
+        })?;
+        report.warnings.extend(rendered.warnings);
 
-        report.files.push(FileReport {
-            path: output_file.clone(),
-            action,
-        });
+        for file in rendered.files {
+            let action = if opts.check {
+                verify_no_drift(&project_root, &file.path, &file.content)?;
+                Action::Unchanged
+            } else {
+                safe_write::write(
+                    &project_root,
+                    &file.path,
+                    &file.content,
+                    &mut lock,
+                    opts.force,
+                )?
+                .into()
+            };
+            report.files.push(FileReport {
+                path: file.path,
+                action,
+            });
+        }
     }
 
     if !opts.check {

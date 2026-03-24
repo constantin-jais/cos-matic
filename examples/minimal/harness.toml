@@ -20,3 +20,15 @@ name = "agents-md"
 adapter = "universal"
 output_file = "AGENTS.md"
 profile = "default"
+
+[[targets]]
+name = "claude-code"
+adapter = "claude"
+output_file = "CLAUDE.md"
+profile = "default"
+
+[[targets]]
+name = "cursor"
+adapter = "cursor"
+output_dir = ".cursor/rules"
+profile = "default"

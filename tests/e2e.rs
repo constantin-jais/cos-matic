@@ -149,3 +149,76 @@ profile = "default"
         "SEC\n\nSTYLE\n"
     );
 }
+
+#[test]
+fn multi_target_generation_with_graceful_degradation() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("harness.toml"),
+        r#"
+[package]
+name = "multi"
+
+[[domains]]
+name = "general"
+priority = 5
+content = "GENERAL"
+
+[[domains]]
+name = "rust"
+priority = 10
+content = "RUST"
+globs = ["src/**/*.rs"]
+
+[[profiles]]
+name = "default"
+domains = ["general", "rust"]
+
+[[targets]]
+name = "agents"
+adapter = "universal"
+output_file = "AGENTS.md"
+profile = "default"
+
+[[targets]]
+name = "claude"
+adapter = "claude"
+output_file = "CLAUDE.md"
+profile = "default"
+
+[[targets]]
+name = "cursor"
+adapter = "cursor"
+output_dir = ".cursor/rules"
+profile = "default"
+"#,
+    )
+    .unwrap();
+    let manifest = root.join("harness.toml");
+    let report = generate::run(&opts(&manifest, false, false)).unwrap();
+
+    // One run produced four files across three targets.
+    assert!(root.join("AGENTS.md").exists());
+    assert!(root.join("CLAUDE.md").exists());
+    assert!(root.join(".cursor/rules/general.mdc").exists());
+    assert!(root.join(".cursor/rules/rust.mdc").exists());
+
+    // Cursor honors the glob: the rust rule is scoped, not always-on.
+    let rust_mdc = fs::read_to_string(root.join(".cursor/rules/rust.mdc")).unwrap();
+    assert!(rust_mdc.contains("globs: src/**/*.rs"));
+    assert!(rust_mdc.contains("alwaysApply: false"));
+
+    // universal and claude cannot express glob activation -> two warnings, but the
+    // content is still rendered (graceful degradation, not an error).
+    let glob_warnings = report
+        .warnings
+        .iter()
+        .filter(|w| w.contains("glob activation"))
+        .count();
+    assert_eq!(glob_warnings, 2);
+
+    // Whole multi-target set is idempotent on re-run.
+    let r2 = generate::run(&opts(&manifest, false, false)).unwrap();
+    assert!(r2.files.iter().all(|f| f.action == Action::Unchanged));
+}

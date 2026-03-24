@@ -19,6 +19,8 @@ pub struct ResolvedDomain {
     pub name: String,
     pub priority: i64,
     pub content: String,
+    /// Optional glob activation, carried through for adapters that honor it.
+    pub globs: Option<Vec<String>>,
 }
 
 /// The validated, content-loaded configuration.
@@ -59,6 +61,7 @@ pub fn build(
             name: d.name,
             priority: d.priority,
             content,
+            globs: d.globs,
         });
     }
 
@@ -160,6 +163,7 @@ mod tests {
             priority: 0,
             content: content.map(str::to_string),
             content_file: content_file.map(str::to_string),
+            globs: None,
         }
     }
 
@@ -271,6 +275,7 @@ mod tests {
             name: name.into(),
             adapter: "universal".into(),
             output_file: Some("AGENTS.md".into()),
+            output_dir: None,
             profile: "p".into(),
         };
         let err = build(

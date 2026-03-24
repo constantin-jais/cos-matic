@@ -41,6 +41,7 @@ mod tests {
                     name: name.to_string(),
                     priority,
                     content: format!("content-{name}"),
+                    globs: None,
                 })
                 .collect(),
             profiles: vec![Profile {

@@ -45,6 +45,10 @@ pub struct Domain {
     pub content: Option<String>,
     /// Path to a Markdown file holding the content, relative to the manifest.
     pub content_file: Option<String>,
+    /// Optional file-glob activation (Tier-2 metadata). Adapters that support
+    /// `Feature::GlobActivation` (e.g. Cursor) scope this domain to matching
+    /// files; others warn and apply it unconditionally. See ADR-0007.
+    pub globs: Option<Vec<String>>,
 }
 
 /// A named selection of domains for a given audience.
@@ -59,10 +63,12 @@ pub struct Profile {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Target {
     pub name: String,
-    /// Adapter id, e.g. `"universal"` (→ AGENTS.md). Phase 1 supports `universal`.
+    /// Adapter id, e.g. `"universal"` (→ AGENTS.md), `"claude"`, `"cursor"`.
     pub adapter: String,
-    /// Output file path, relative to the project root.
+    /// Output file path (single-file adapters), relative to the project root.
     pub output_file: Option<String>,
+    /// Output directory (multi-file adapters, e.g. cursor), relative to root.
+    pub output_dir: Option<String>,
     /// Profile whose domains this target renders.
     pub profile: String,
 }
