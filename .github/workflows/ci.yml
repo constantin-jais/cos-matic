@@ -24,3 +24,18 @@ jobs:
         run: cargo clippy --all-targets --all-features
       - name: Test
         run: cargo test --all-features
+
+  # Dogfood: the tool gates its own example (ADR-0010). Fails if the committed
+  # example outputs drift from the source, or a hard gate breaks.
+  dogfood:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build aom
+        run: cargo build --bin aom
+      - name: Goals
+        run: ./target/debug/aom goals --manifest examples/minimal/harness.toml
+      - name: Drift gate
+        run: ./target/debug/aom generate --check --manifest examples/minimal/harness.toml

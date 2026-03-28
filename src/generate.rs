@@ -122,6 +122,8 @@ pub fn run(opts: &Options) -> Result<Report> {
     // Guard against two targets resolving to the same output path (case-insensitive,
     // for macOS/Windows): without this, the later write would silently clobber.
     let mut seen_paths: HashSet<String> = HashSet::new();
+    // `--check` reports every drifted file in one pass, not just the first.
+    let mut drifted: Vec<String> = Vec::new();
 
     for target in &tree.targets {
         let adapter = adapter_for(&target.adapter).ok_or_else(|| Error::UnknownAdapter {
@@ -148,7 +150,9 @@ pub fn run(opts: &Options) -> Result<Report> {
                 return Err(Error::DuplicateRenderedPath { path: file.path });
             }
             let action = if opts.check {
-                verify_no_drift(&project_root, &file.path, &file.content)?;
+                if is_drifted(&project_root, &file.path, &file.content)? {
+                    drifted.push(file.path.clone());
+                }
                 Action::Unchanged
             } else {
                 safe_write::write(
@@ -167,27 +171,25 @@ pub fn run(opts: &Options) -> Result<Report> {
         }
     }
 
-    if !opts.check {
+    if opts.check {
+        if !drifted.is_empty() {
+            return Err(Error::Drift { paths: drifted });
+        }
+    } else {
         lock.save(&project_root)?;
     }
 
     Ok(report)
 }
 
-/// In `--check` mode: the on-disk file must exist and equal the rendered content.
-fn verify_no_drift(project_root: &Path, rel_path: &str, content: &str) -> Result<()> {
+/// In `--check` mode: is the on-disk file absent or different from `content`? A
+/// real IO error (permissions, etc.) propagates as itself rather than as a
+/// misleading "drift" that would send the user in circles.
+fn is_drifted(project_root: &Path, rel_path: &str, content: &str) -> Result<bool> {
     let abs = crate::paths::safe_join(project_root, rel_path)?;
     match std::fs::read_to_string(&abs) {
-        Ok(on_disk) if on_disk == content => Ok(()),
-        // Present but different, or absent entirely: that is genuine drift.
-        Ok(_) => Err(Error::Drift {
-            path: rel_path.to_string(),
-        }),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(Error::Drift {
-            path: rel_path.to_string(),
-        }),
-        // A real IO problem (permissions, etc.) must surface as itself, not as
-        // a misleading "drift" that sends the user in circles.
+        Ok(on_disk) => Ok(on_disk != content),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(true),
         Err(source) => Err(Error::Io {
             path: rel_path.to_string(),
             source,

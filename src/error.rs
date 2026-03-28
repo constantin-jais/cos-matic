@@ -180,10 +180,10 @@ pub enum Error {
     )]
     Clobber { path: String },
 
-    /// `--check` found that a generated file is out of date.
-    #[error("drift detected: `{path}` is out of date with the source")]
+    /// `--check` found one or more generated files out of date with the source.
+    #[error("drift detected: {} file(s) out of date:\n{}", .paths.len(), .paths.join("\n"))]
     #[diagnostic(code(aom::drift), help("run `aom generate` and commit the result"))]
-    Drift { path: String },
+    Drift { paths: Vec<String> },
 }
 
 /// A TOML parse failure with a pointed source span. Held behind a `Box` in

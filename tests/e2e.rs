@@ -492,3 +492,50 @@ fn observability_goal_reports_without_blocking() {
     assert_eq!(report.goals.len(), 1);
     assert!(!report.goals[0].passed);
 }
+
+#[test]
+fn check_reports_every_drifted_file_in_one_pass() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("harness.toml"),
+        r#"
+[package]
+name = "drift"
+[[domains]]
+name = "a"
+content = "A"
+[[profiles]]
+name = "default"
+domains = ["a"]
+[[targets]]
+name = "agents"
+adapter = "universal"
+output_file = "AGENTS.md"
+profile = "default"
+[[targets]]
+name = "claude"
+adapter = "claude"
+output_file = "CLAUDE.md"
+profile = "default"
+"#,
+    )
+    .unwrap();
+    let manifest = root.join("harness.toml");
+    generate::run(&opts(&manifest, false, false)).unwrap();
+
+    // Tamper with both generated files.
+    fs::write(root.join("AGENTS.md"), "tampered\n").unwrap();
+    fs::write(root.join("CLAUDE.md"), "tampered\n").unwrap();
+
+    // --check reports BOTH in one pass, not just the first.
+    let err = generate::run(&opts(&manifest, true, false)).unwrap_err();
+    match err {
+        Error::Drift { paths } => {
+            assert_eq!(paths.len(), 2, "both files should drift: {paths:?}");
+            assert!(paths.iter().any(|p| p == "AGENTS.md"));
+            assert!(paths.iter().any(|p| p == "CLAUDE.md"));
+        }
+        other => panic!("expected Drift, got {other:?}"),
+    }
+}
