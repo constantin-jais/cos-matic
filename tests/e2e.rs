@@ -539,3 +539,84 @@ profile = "default"
         other => panic!("expected Drift, got {other:?}"),
     }
 }
+
+#[test]
+fn check_reports_drift_when_an_output_was_deleted() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("harness.toml"),
+        r#"
+[package]
+name = "deleted"
+[[domains]]
+name = "a"
+content = "A"
+[[profiles]]
+name = "default"
+domains = ["a"]
+[[targets]]
+name = "agents"
+adapter = "universal"
+output_file = "AGENTS.md"
+profile = "default"
+"#,
+    )
+    .unwrap();
+    let manifest = root.join("harness.toml");
+    generate::run(&opts(&manifest, false, false)).unwrap();
+    fs::remove_file(root.join("AGENTS.md")).unwrap();
+
+    let err = generate::run(&opts(&manifest, true, false)).unwrap_err();
+    match err {
+        Error::Drift { paths } => assert!(paths.iter().any(|p| p == "AGENTS.md"), "{paths:?}"),
+        other => panic!("expected Drift, got {other:?}"),
+    }
+}
+
+#[test]
+fn check_reports_only_the_drifted_file_in_a_mixed_set() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("harness.toml"),
+        r#"
+[package]
+name = "mixed"
+[[domains]]
+name = "a"
+content = "A"
+[[profiles]]
+name = "default"
+domains = ["a"]
+[[targets]]
+name = "agents"
+adapter = "universal"
+output_file = "AGENTS.md"
+profile = "default"
+[[targets]]
+name = "claude"
+adapter = "claude"
+output_file = "CLAUDE.md"
+profile = "default"
+"#,
+    )
+    .unwrap();
+    let manifest = root.join("harness.toml");
+    generate::run(&opts(&manifest, false, false)).unwrap();
+
+    // Tamper with only one of the two outputs.
+    fs::write(root.join("CLAUDE.md"), "tampered\n").unwrap();
+
+    let err = generate::run(&opts(&manifest, true, false)).unwrap_err();
+    match err {
+        Error::Drift { paths } => {
+            assert_eq!(
+                paths,
+                vec!["CLAUDE.md".to_string()],
+                "only CLAUDE.md drifted"
+            );
+        }
+        other => panic!("expected Drift, got {other:?}"),
+    }
+}

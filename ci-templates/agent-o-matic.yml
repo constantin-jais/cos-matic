@@ -15,9 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2 # cache the install build across runs
 
       - name: Install agent-o-matic
-        # Once published to crates.io this becomes: cargo install agent-o-matic
+        # Pin to a released tag once available (append `--tag vX.Y.Z`); until then
+        # this tracks the default branch. Once on crates.io: cargo install agent-o-matic
         run: cargo install --locked --git https://github.com/constantin-jais/Agent-O-Matic
 
       # `generate --check` also enforces hard gates, but a dedicated `goals` step
