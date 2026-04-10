@@ -1,4 +1,4 @@
-//! The embedded content library (ADR-0008): neutral, reusable instruction
+//! The embedded content library (ADR: embedded-content-library): neutral, reusable instruction
 //! domains compiled into the binary via `include_str!`. No filesystem, no
 //! network — one static binary carries its batteries.
 
@@ -19,49 +19,49 @@ const BUILTINS: &[Builtin] = &[
         name: "security-baseline",
         priority: 90,
         description: "Validate input at the boundary; never log secrets or PII.",
-        content: include_str!("../content/domains/security-baseline.md"),
+        content: include_str!("../../../content/domains/security-baseline.md"),
     },
     Builtin {
         name: "four-axes",
         priority: 85,
         description: "Decide on Security > Quality > Performance > Completeness.",
-        content: include_str!("../content/domains/four-axes.md"),
+        content: include_str!("../../../content/domains/four-axes.md"),
     },
     Builtin {
         name: "code-style",
         priority: 70,
         description: "Explicit over implicit; readability over cleverness.",
-        content: include_str!("../content/domains/code-style.md"),
+        content: include_str!("../../../content/domains/code-style.md"),
     },
     Builtin {
         name: "tdd",
         priority: 65,
         description: "Tests for non-trivial logic; tests are the spec.",
-        content: include_str!("../content/domains/tdd.md"),
+        content: include_str!("../../../content/domains/tdd.md"),
     },
     Builtin {
         name: "agent-behavior",
         priority: 60,
         description: "Read real state before acting; verify before prescribing.",
-        content: include_str!("../content/domains/agent-behavior.md"),
+        content: include_str!("../../../content/domains/agent-behavior.md"),
     },
     Builtin {
         name: "anti-gold-plating",
         priority: 55,
         description: "Build what the task needs, not what it might need.",
-        content: include_str!("../content/domains/anti-gold-plating.md"),
+        content: include_str!("../../../content/domains/anti-gold-plating.md"),
     },
     Builtin {
         name: "factual-style",
         priority: 50,
         description: "No filler; calibrate uncertainty; the why, not the what.",
-        content: include_str!("../content/domains/factual-style.md"),
+        content: include_str!("../../../content/domains/factual-style.md"),
     },
     Builtin {
         name: "response-blocks",
         priority: 45,
         description: "ORIENTATION / PROPOSITION / DELTA / DECISION vocabulary.",
-        content: include_str!("../content/domains/response-blocks.md"),
+        content: include_str!("../../../content/domains/response-blocks.md"),
     },
 ];
 

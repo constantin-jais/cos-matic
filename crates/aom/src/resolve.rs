@@ -119,7 +119,7 @@ fn resolve_rec(
         });
     }
 
-    // `builtins = [...]` is sugar for `library://<name>` includes (ADR-0008).
+    // `builtins = [...]` is sugar for `library://<name>` includes (ADR: embedded-content-library).
     for name in &manifest.package.builtins {
         add_builtin(name, out, library_added)?;
     }

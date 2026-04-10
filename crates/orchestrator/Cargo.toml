@@ -1,0 +1,10 @@
+[package]
+name = "orchestrator"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# A0 ships only the scaffold. The dependency on `agent-o-matic` (for the future
+# drift gate) is added in A1, when the gate actually calls into the compiler.
+[dependencies]

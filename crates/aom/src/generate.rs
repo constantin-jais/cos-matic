@@ -53,9 +53,9 @@ pub struct FileReport {
 #[derive(Debug, Clone, Default)]
 pub struct Report {
     pub files: Vec<FileReport>,
-    /// Graceful-degradation warnings collected across all targets (ADR-0007).
+    /// Graceful-degradation warnings collected across all targets (ADR: feature-gating-graceful-degradation).
     pub warnings: Vec<String>,
-    /// Outcomes of the declared goals (ADR-0009); hard-gate failures abort the run.
+    /// Outcomes of the declared goals (ADR: goals-safe-declarative-checks); hard-gate failures abort the run.
     pub goals: Vec<GoalOutcome>,
 }
 
@@ -72,7 +72,7 @@ pub struct Options {
 
 /// Parse, resolve, and validate the manifest into a `ConfigTree`. Shared by
 /// `generate` and the `goals` command.
-pub(crate) fn load_tree(manifest_path: &Path) -> Result<(PathBuf, Manifest, ConfigTree)> {
+pub fn load_tree(manifest_path: &Path) -> Result<(PathBuf, Manifest, ConfigTree)> {
     let display = manifest_path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -103,7 +103,7 @@ pub fn run(opts: &Options) -> Result<Report> {
     let (project_root, manifest, tree) = load_tree(&opts.manifest_path)?;
 
     // Goals run before any write: a failed hard gate aborts without producing
-    // output (ADR-0009).
+    // output (ADR: goals-safe-declarative-checks).
     let goal_outcomes = goals::evaluate(&tree, &manifest.goals)?;
     let failures: Vec<String> = goal_outcomes
         .iter()

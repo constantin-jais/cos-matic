@@ -1,4 +1,4 @@
-//! The out-of-band safe-write sentinel (ADR-0004): `.harness/lock.toml` maps each
+//! The out-of-band safe-write sentinel (ADR: safe-write-sentinel-lockfile): `.harness/lock.toml` maps each
 //! generated, repo-relative path to the BLAKE3 hash of the content the tool last
 //! wrote. It is the source of truth for both clobber protection and drift checks,
 //! and is committed to version control.

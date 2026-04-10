@@ -22,7 +22,6 @@ name = "agent-o-matic"
 version = "0.0.0"
 dependencies = [
  "blake3",
- "clap",
  "miette",
  "serde",
  "serde_json",
@@ -79,6 +78,16 @@ dependencies = [
  "anstyle",
  "once_cell_polyfill",
  "windows-sys",
+]
+
+[[package]]
+name = "aom-cli"
+version = "0.0.0"
+dependencies = [
+ "agent-o-matic",
+ "clap",
+ "miette",
+ "tempfile",
 ]
 
 [[package]]
@@ -376,6 +385,10 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
+
+[[package]]
+name = "orchestrator"
+version = "0.0.0"
 
 [[package]]
 name = "owo-colors"

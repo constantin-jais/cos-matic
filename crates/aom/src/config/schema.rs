@@ -23,7 +23,7 @@ pub struct Manifest {
     pub goals: Vec<Goal>,
 }
 
-/// Whether a goal blocks the run or is merely reported (ADR-0009).
+/// Whether a goal blocks the run or is merely reported (ADR: goals-safe-declarative-checks).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GoalKind {
@@ -33,7 +33,7 @@ pub enum GoalKind {
     Observability,
 }
 
-/// A declarative, shell-free check over the configuration (ADR-0009).
+/// A declarative, shell-free check over the configuration (ADR: goals-safe-declarative-checks).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Goal {
     pub kind: GoalKind,
@@ -76,7 +76,7 @@ pub struct Domain {
     pub content_file: Option<String>,
     /// Optional file-glob activation (Tier-2 metadata). Adapters that support
     /// `Feature::GlobActivation` (e.g. Cursor) scope this domain to matching
-    /// files; others warn and apply it unconditionally. See ADR-0007.
+    /// files; others warn and apply it unconditionally. See ADR: feature-gating-graceful-degradation.
     pub globs: Option<Vec<String>>,
 }
 
