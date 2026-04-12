@@ -132,7 +132,7 @@ pub fn run(opts: &Options) -> Result<Report> {
         })?;
 
         // Tier-2 features declared on a target whose adapter can't honor them are
-        // ignored, with a warning (graceful degradation, ADR-0007).
+        // ignored, with a warning (graceful degradation, ADR: feature-gating-graceful-degradation).
         for (declared, feature) in [
             (!target.subagents.is_empty(), Feature::Subagents),
             (!target.skills.is_empty(), Feature::Skills),
