@@ -83,6 +83,9 @@ mod tests {
             output_file: None,
             output_dir: Some(".cursor/rules".into()),
             profile: "default".into(),
+            subagents: vec![],
+            skills: vec![],
+            hooks: vec![],
         }
     }
 

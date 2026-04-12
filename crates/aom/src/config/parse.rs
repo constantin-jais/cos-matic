@@ -83,9 +83,12 @@ mod tests {
             name = "claude"
             adapter = "claude"
             profile = "default"
-            # Not-yet-implemented per-target fields must be ignored, not rejected.
-            subagents = [{ name = "reviewer", model = "opus" }]
-            hooks = [{ event = "sessionStart" }]
+            # Not-yet-modeled per-target keys must be ignored, not rejected.
+            experimental = true
+
+            # A whole not-yet-implemented section is ignored too.
+            [[output_styles]]
+            name = "factual"
         "#;
         let m = parse_str("harness.toml", text).expect("future fields are ignored");
         assert_eq!(m.package.name, "demo");

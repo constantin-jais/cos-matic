@@ -1,6 +1,7 @@
 version = 1
 
 [files]
+".claude/agents/reviewer.md" = "e67a19f3e9d43c3b7bdf1fbcc6bcd27f5be74ee2ad99570ed458c44c0ddb717d"
 ".cursor/rules/code-style.mdc" = "3cbce44d3ec2bc7760329caf4fa95aa3b1013465ea236fb19881ada142f12c80"
 ".cursor/rules/security.mdc" = "fdec3a85e3a01f174661f4709083a6750ac87dd7874aaca0000a5432165437f0"
 ".cursor/rules/tdd.mdc" = "4627fa6c18a581af47ed13fd6d932a6509727e3d3548eaadde17059a264ef279"

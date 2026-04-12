@@ -154,6 +154,16 @@ pub enum Error {
         reason: String,
     },
 
+    /// A Claude Tier-2 extension (subagent/skill) has an unsafe name or
+    /// frontmatter value (it becomes a filename and a YAML key).
+    #[error("invalid {kind} `{name}`: {reason}")]
+    #[diagnostic(code(aom::invalid_extension))]
+    InvalidExtension {
+        kind: String,
+        name: String,
+        reason: String,
+    },
+
     /// A target set both `output_file` and `output_dir`, which is ambiguous.
     #[error("target `{target}` sets both `output_file` and `output_dir`")]
     #[diagnostic(

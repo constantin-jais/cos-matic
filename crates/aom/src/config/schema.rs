@@ -100,4 +100,40 @@ pub struct Target {
     pub output_dir: Option<String>,
     /// Profile whose domains this target renders.
     pub profile: String,
+    /// Claude Tier-2 subagents (`.claude/agents/<name>.md`). See ADR: claude-tier2-extensions.
+    #[serde(default)]
+    pub subagents: Vec<Subagent>,
+    /// Claude Tier-2 skills (`.claude/skills/<name>/SKILL.md`).
+    #[serde(default)]
+    pub skills: Vec<Skill>,
+    /// Claude Tier-2 hooks (`.claude/settings.json`).
+    #[serde(default)]
+    pub hooks: Vec<Hook>,
+}
+
+/// A Claude subagent definition (Tier-2; only the `claude` adapter emits it).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Subagent {
+    pub name: String,
+    pub description: String,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub tools: Option<Vec<String>>,
+    pub prompt: String,
+}
+
+/// A Claude skill definition (Tier-2).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Skill {
+    pub name: String,
+    pub description: String,
+    pub content: String,
+}
+
+/// A Claude hook: run `command` on `event` (Tier-2).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Hook {
+    pub event: String,
+    pub command: String,
 }

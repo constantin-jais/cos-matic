@@ -325,6 +325,9 @@ mod tests {
             output_file: Some("AGENTS.md".into()),
             output_dir: None,
             profile: "p".into(),
+            subagents: vec![],
+            skills: vec![],
+            hooks: vec![],
         };
         let err = build(
             &root,
@@ -427,6 +430,9 @@ mod tests {
             output_file: Some("AGENTS.md".into()),
             output_dir: Some(".cursor/rules".into()),
             profile: "p".into(),
+            subagents: vec![],
+            skills: vec![],
+            hooks: vec![],
         };
         let err = build(
             &root,

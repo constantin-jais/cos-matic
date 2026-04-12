@@ -58,6 +58,9 @@ mod tests {
             output_file: Some("AGENTS.md".into()),
             output_dir: None,
             profile: "default".into(),
+            subagents: vec![],
+            skills: vec![],
+            hooks: vec![],
         }
     }
 

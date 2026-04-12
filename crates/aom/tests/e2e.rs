@@ -620,3 +620,88 @@ profile = "default"
         other => panic!("expected Drift, got {other:?}"),
     }
 }
+
+#[test]
+fn claude_tier2_emits_native_files_end_to_end() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("harness.toml"),
+        r#"
+[package]
+name = "tier2"
+[[domains]]
+name = "a"
+content = "A"
+[[profiles]]
+name = "default"
+domains = ["a"]
+[[targets]]
+name = "claude"
+adapter = "claude"
+output_file = "CLAUDE.md"
+profile = "default"
+[[targets.subagents]]
+name = "reviewer"
+description = "Reviews diffs."
+prompt = "You review code."
+[[targets.skills]]
+name = "release"
+description = "Cut a release."
+content = "Steps..."
+[[targets.hooks]]
+event = "PostToolUse"
+command = "cargo fmt"
+"#,
+    )
+    .unwrap();
+    let manifest = root.join("harness.toml");
+    generate::run(&opts(&manifest, false, false)).unwrap();
+
+    assert!(root.join("CLAUDE.md").exists());
+    assert!(root.join(".claude/agents/reviewer.md").exists());
+    assert!(root.join(".claude/skills/release/SKILL.md").exists());
+    assert!(root.join(".claude/settings.json").exists());
+
+    let settings = fs::read_to_string(root.join(".claude/settings.json")).unwrap();
+    assert!(settings.contains("PostToolUse") && settings.contains("cargo fmt"));
+
+    // The whole set is idempotent and safe-written like any other output.
+    let r2 = generate::run(&opts(&manifest, false, false)).unwrap();
+    assert!(r2.files.iter().all(|f| f.action == Action::Unchanged));
+}
+
+#[test]
+fn tier2_on_a_non_claude_target_warns_and_is_ignored() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("harness.toml"),
+        r#"
+[package]
+name = "wrongtarget"
+[[domains]]
+name = "a"
+content = "A"
+[[profiles]]
+name = "default"
+domains = ["a"]
+[[targets]]
+name = "agents"
+adapter = "universal"
+output_file = "AGENTS.md"
+profile = "default"
+[[targets.subagents]]
+name = "reviewer"
+description = "x"
+prompt = "p"
+"#,
+    )
+    .unwrap();
+    let manifest = root.join("harness.toml");
+    let report = generate::run(&opts(&manifest, false, false)).unwrap();
+
+    // The universal adapter ignores subagents, with a warning; no .claude/ output.
+    assert!(report.warnings.iter().any(|w| w.contains("subagents")));
+    assert!(!root.join(".claude/agents/reviewer.md").exists());
+}

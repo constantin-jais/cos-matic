@@ -10,7 +10,7 @@ use crate::error::{Error, Result};
 use crate::goals::{self, GoalOutcome};
 use crate::ir::ConfigTree;
 use crate::lock::Lockfile;
-use crate::render::{RenderInput, adapter_for};
+use crate::render::{Feature, RenderInput, adapter_for};
 use crate::safe_write::{self, WriteAction};
 use crate::{ir, merge, resolve};
 
@@ -130,6 +130,23 @@ pub fn run(opts: &Options) -> Result<Report> {
             target: target.name.clone(),
             adapter: target.adapter.clone(),
         })?;
+
+        // Tier-2 features declared on a target whose adapter can't honor them are
+        // ignored, with a warning (graceful degradation, ADR-0007).
+        for (declared, feature) in [
+            (!target.subagents.is_empty(), Feature::Subagents),
+            (!target.skills.is_empty(), Feature::Skills),
+            (!target.hooks.is_empty(), Feature::Hooks),
+        ] {
+            if declared && !adapter.supports(feature) {
+                report.warnings.push(format!(
+                    "adapter `{}` does not support {}; target `{}` ignores them",
+                    target.adapter,
+                    feature.label(),
+                    target.name,
+                ));
+            }
+        }
 
         let profile = tree
             .profile(&target.profile)

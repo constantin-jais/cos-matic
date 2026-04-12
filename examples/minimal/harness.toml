@@ -29,6 +29,13 @@ adapter = "claude"
 output_file = "CLAUDE.md"
 profile = "default"
 
+# A Claude-only Tier-2 construct (ADR-0011): emitted to .claude/agents/.
+[[targets.subagents]]
+name = "reviewer"
+description = "Reviews a change against the project's decision axes."
+model = "sonnet"
+prompt = "You are a focused code reviewer. Check security, then quality, then performance, then completeness."
+
 [[targets]]
 name = "cursor"
 adapter = "cursor"

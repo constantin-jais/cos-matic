@@ -19,12 +19,21 @@ use crate::ir::ResolvedDomain;
 pub enum Feature {
     /// Per-file glob activation (Cursor `.mdc` `globs`).
     GlobActivation,
+    /// Claude subagents (`.claude/agents/`).
+    Subagents,
+    /// Claude skills (`.claude/skills/`).
+    Skills,
+    /// Claude hooks (`.claude/settings.json`).
+    Hooks,
 }
 
 impl Feature {
     pub fn label(self) -> &'static str {
         match self {
             Feature::GlobActivation => "glob activation",
+            Feature::Subagents => "subagents",
+            Feature::Skills => "skills",
+            Feature::Hooks => "hooks",
         }
     }
 }
