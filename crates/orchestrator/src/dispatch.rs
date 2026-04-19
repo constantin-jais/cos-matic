@@ -173,8 +173,11 @@ impl Fixer for ClaudeFixer {
              Do not push, do not open a PR, do not touch main.",
             req.issue, req.title, req.body
         );
+        // Headless Claude must be allowed the tools it needs to *make* the fix
+        // (Edit/Write) and prove it (Bash for tests). Bounded by the isolated
+        // worktree: it cannot push, open a PR, or touch main from here.
         let status = Command::new("claude")
-            .args(["-p", &prompt])
+            .args(["-p", &prompt, "--allowedTools", "Edit", "Write", "Bash"])
             .current_dir(&wt)
             .status()
             .map_err(|e| FixerError(format!("spawn claude: {e}")))?;

@@ -7,6 +7,7 @@ use miette::{IntoDiagnostic, miette};
 
 use agent_o_matic::generate;
 use cli::{Cli, Command, IncidentCommand, LibraryAction};
+use orchestrator::automerge::Gate;
 use orchestrator::forge::{self, GithubForge, RepoId};
 use orchestrator::{automerge, deploy, dispatch, incident, pipeline};
 
@@ -242,8 +243,41 @@ fn main() -> miette::Result<()> {
             title,
             body,
             repo,
+            dry_run,
         } => {
             let repo_id = resolve_repo(repo.as_deref())?;
+            if dry_run {
+                let branch = format!("aom/fix/issue-{issue}");
+                println!(
+                    "[dry-run] loop for issue #{issue} on {}/{} — no fix, merge, or deploy will run.",
+                    repo_id.owner, repo_id.name
+                );
+                println!(
+                    "  1. dispatch  -> would create `{branch}` and run a bounded fixer. [skipped]"
+                );
+                let verdict = automerge::GhChecksGate
+                    .verdict(&automerge::MergeRequest {
+                        branch: branch.clone(),
+                        repo: repo_id.clone(),
+                    })
+                    .into_diagnostic()?;
+                let green = matches!(verdict, automerge::Verdict::Green);
+                println!(
+                    "  2. automerge -> real gate verdict for `{branch}`: {verdict:?} -> would {}.",
+                    if green { "merge" } else { "REFUSE, stop" }
+                );
+                if !green {
+                    println!(
+                        "     note: a dispatch branch is local with no PR, so the gate is Unknown — \
+                         the loop needs a publish step (push + open PR) to advance past automerge."
+                    );
+                    return Ok(());
+                }
+                println!(
+                    "  3. deploy    -> would canary-deploy, smoke-test, and promote-or-rollback. [skipped]"
+                );
+                return Ok(());
+            }
             let env = pipeline::LoopEnvelope {
                 enabled: std::env::var_os("AOM_LOOP_DISABLED").is_none(),
                 allowlist: vec![repo_id.clone()],
