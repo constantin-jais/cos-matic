@@ -22,3 +22,4 @@ doubles as teaching material. Format: context / decision / consequences.
 | [0015](0015-autonomous-merge.md)                    | Autonomous merge: gate-and-merge on green evidence only     |
 | [0016](0016-deploy-canary-smoke-rollback.md)        | Deploy: canary -> smoke -> promote or auto-rollback         |
 | [0017](0017-end-to-end-loop.md)                     | End-to-end loop: one envelope, fail-safe by construction    |
+| [0018](0018-publish-step.md)                        | Publish step: push + open PR (lets the loop complete)       |

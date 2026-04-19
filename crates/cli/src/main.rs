@@ -255,6 +255,7 @@ fn main() -> miette::Result<()> {
                 println!(
                     "  1. dispatch  -> would create `{branch}` and run a bounded fixer. [skipped]"
                 );
+                println!("  2. publish   -> would push `{branch}` and open a PR. [skipped]");
                 let verdict = automerge::GhChecksGate
                     .verdict(&automerge::MergeRequest {
                         branch: branch.clone(),
@@ -263,18 +264,18 @@ fn main() -> miette::Result<()> {
                     .into_diagnostic()?;
                 let green = matches!(verdict, automerge::Verdict::Green);
                 println!(
-                    "  2. automerge -> real gate verdict for `{branch}`: {verdict:?} -> would {}.",
+                    "  3. automerge -> real gate verdict for `{branch}`: {verdict:?} -> would {}.",
                     if green { "merge" } else { "REFUSE, stop" }
                 );
                 if !green {
                     println!(
-                        "     note: a dispatch branch is local with no PR, so the gate is Unknown — \
-                         the loop needs a publish step (push + open PR) to advance past automerge."
+                        "     note: dry-run skips publish, so no PR exists yet — a real run \
+                         publishes first, then the gate sees the PR's checks."
                     );
                     return Ok(());
                 }
                 println!(
-                    "  3. deploy    -> would canary-deploy, smoke-test, and promote-or-rollback. [skipped]"
+                    "  4. deploy    -> would canary-deploy, smoke-test, and promote-or-rollback. [skipped]"
                 );
                 return Ok(());
             }
