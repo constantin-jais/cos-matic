@@ -1,0 +1,85 @@
+name: orchestrator-loop
+
+# The autonomous loop NEVER runs on push or PR — only when a human deliberately
+# dispatches it. Safe by default (dry-run); the live path is fenced to a repo
+# explicitly flagged as a throwaway sandbox.
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number to drive the loop"
+        required: true
+        type: string
+      mode:
+        description: "dry-run (safe, read-only) or live (outward — sandbox only)"
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - live
+
+# Scoped bot identity. This `permissions` block IS the fine-grained scope: the
+# ephemeral github-actions[bot] token, narrowed to exactly what the loop touches.
+# Nothing here is a personal PAT — for dry-run, this is the whole credential story.
+permissions:
+  contents: write # publish: push the fix branch
+  issues: write # incident -> issue, close
+  pull-requests: write # publish/automerge: open + merge the PR
+
+# Never overlap autonomous runs.
+concurrency:
+  group: orchestrator-loop
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  loop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build aom
+        run: cargo build --bin aom
+
+      # --- dry-run: read-only. github.token is sufficient; no Claude needed. ---
+      - name: Loop (dry-run)
+        if: inputs.mode == 'dry-run'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          ./target/debug/aom loop --dry-run
+          --issue "${{ inputs.issue }}"
+          --title "ci: autonomous loop"
+
+      # --- live: outward + irreversible. Fenced to an explicit sandbox repo. ---
+      - name: Guard — live is sandbox-only
+        if: inputs.mode == 'live' && vars.AOM_SANDBOX != 'true'
+        run: |
+          echo "::error::live mode refused. Set repository variable AOM_SANDBOX=true to confirm this is a disposable sandbox (never the real repo)."
+          exit 1
+      - name: Install Claude Code
+        if: inputs.mode == 'live' && vars.AOM_SANDBOX == 'true'
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Loop (live)
+        if: inputs.mode == 'live' && vars.AOM_SANDBOX == 'true'
+        env:
+          # A fine-grained PAT, NOT github.token: a branch pushed by github.token
+          # does not trigger CI, so the merge gate would never see green checks.
+          # Scope it to contents+issues+pull_requests on the sandbox repo only.
+          GITHUB_TOKEN: ${{ secrets.AOM_BOT_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # No-op deploy: exercise the wiring, never real infrastructure.
+          AOM_DEPLOY_CANARY: "true"
+          AOM_DEPLOY_PROMOTE: "true"
+          AOM_DEPLOY_ROLLBACK: "true"
+          AOM_DEPLOY_SMOKE: "true"
+        run: >-
+          ./target/debug/aom loop
+          --issue "${{ inputs.issue }}"
+          --title "ci: autonomous loop"
