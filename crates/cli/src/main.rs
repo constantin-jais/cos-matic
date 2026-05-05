@@ -244,6 +244,7 @@ fn main() -> miette::Result<()> {
             body,
             repo,
             dry_run,
+            max_iterations,
         } => {
             let repo_id = resolve_repo(repo.as_deref())?;
             if dry_run {
@@ -282,7 +283,7 @@ fn main() -> miette::Result<()> {
             let env = pipeline::LoopEnvelope {
                 enabled: std::env::var_os("AOM_LOOP_DISABLED").is_none(),
                 allowlist: vec![repo_id.clone()],
-                max_iterations: 1,
+                max_iterations,
             };
             let req = pipeline::LoopRequest {
                 issue,
@@ -297,7 +298,7 @@ fn main() -> miette::Result<()> {
                 deploy_rollback: std::env::var("AOM_DEPLOY_ROLLBACK").unwrap_or_default(),
                 deploy_smoke: std::env::var("AOM_DEPLOY_SMOKE").unwrap_or_default(),
             };
-            let outcome = pipeline::run_loop(&stages, &env, &req, 0).into_diagnostic()?;
+            let outcome = pipeline::run_until_done(&stages, &env, &req).into_diagnostic()?;
 
             let ts = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

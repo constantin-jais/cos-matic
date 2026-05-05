@@ -26,3 +26,4 @@ doubles as teaching material. Format: context / decision / consequences.
 | [0019](0019-operate-loop-as-scoped-ci-bot.md)       | Operate the autonomous loop as a scoped CI bot              |
 | [0020](0020-merge-gate-waits-for-checks.md)         | Merge gate waits (polls) for checks to settle               |
 | [0021](0021-coverage-as-ci-gate.md)                 | Coverage as a blocking CI gate (+ orchestrator E2E)         |
+| [0022](0022-loop-bounded-retry.md)                  | The loop retries: bounded multi-iteration                   |

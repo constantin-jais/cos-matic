@@ -92,7 +92,8 @@ pub enum Command {
         repo: Option<String>,
     },
 
-    /// Run the end-to-end loop: dispatch -> automerge -> deploy (stops at the first failure).
+    /// Run the end-to-end loop: dispatch -> publish -> automerge -> deploy,
+    /// retried until it lands or the iteration budget is spent.
     Loop {
         /// Issue number driving the loop.
         #[arg(long)]
@@ -114,6 +115,10 @@ pub enum Command {
         /// gate), but no fix, no merge, no deploy.
         #[arg(long)]
         dry_run: bool,
+
+        /// Retry the loop up to this many times before giving up (circuit-breaker).
+        #[arg(long, default_value_t = 3)]
+        max_iterations: u32,
     },
 }
 
