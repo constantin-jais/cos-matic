@@ -169,15 +169,31 @@ impl Fixer for ClaudeFixer {
 
         // Hand off to the fixer agent — one attempt, confined to the worktree.
         let prompt = format!(
-            "Fix issue #{}: {}\n\n{}\n\nMake a minimal, well-tested change. \
-             Do not push, do not open a PR, do not touch main.",
+            "Fix issue #{}: {}\n\n{}\n\nMake a minimal change: edit the files to fix \
+             it; you may run `cargo` to check your work. Do NOT run git, commit, \
+             push, or open a PR, and do not touch main — the change is committed for \
+             you afterward.",
             req.issue, req.title, req.body
         );
-        // Headless Claude must be allowed the tools it needs to *make* the fix
-        // (Edit/Write) and prove it (Bash for tests). Bounded by the isolated
-        // worktree: it cannot push, open a PR, or touch main from here.
+        // Hardening (ADR: bounded-fixer-bash-hardening): the headless fixer gets an
+        // allow-list, not arbitrary Bash. It may edit/read/search and run `cargo`
+        // to verify — but no git, no network, no `rm`, no arbitrary shell.
+        // `--permission-mode dontAsk` makes anything off the list fail closed
+        // (auto-denied, never a prompt that would hang a headless run).
         let status = Command::new("claude")
-            .args(["-p", &prompt, "--allowedTools", "Edit", "Write", "Bash"])
+            .args([
+                "-p",
+                &prompt,
+                "--permission-mode",
+                "dontAsk",
+                "--allowedTools",
+                "Edit",
+                "Write",
+                "Read",
+                "Grep",
+                "Glob",
+                "Bash(cargo *)",
+            ])
             .current_dir(&wt)
             .status()
             .map_err(|e| FixerError(format!("spawn claude: {e}")))?;
@@ -186,9 +202,30 @@ impl Fixer for ClaudeFixer {
                 "fixer exited with {status}; worktree left at {wt_str} for inspection"
             )));
         }
+
+        // The fixer only edits; commit its work so the branch is publishable. An
+        // empty diff is a clear failure (no fix produced), not a silent empty PR.
+        if git_stdout(&wt, &["status", "--porcelain"])?
+            .trim()
+            .is_empty()
+        {
+            return Err(FixerError(format!(
+                "fixer produced no changes; worktree left at {wt_str} for inspection"
+            )));
+        }
+        run_git(&wt, &["add", "-A"])?;
+        run_git(
+            &wt,
+            &[
+                "commit",
+                "-m",
+                &format!("fix: #{} {}", req.issue, req.title),
+            ],
+        )?;
+
         Ok(FixReport {
             branch,
-            summary: format!("fixer ran in an isolated worktree ({wt_str})"),
+            summary: format!("fixer ran and committed in an isolated worktree ({wt_str})"),
         })
     }
 }
@@ -206,6 +243,23 @@ fn run_git(root: &Path, args: &[&str]) -> Result<(), FixerError> {
         )));
     }
     Ok(())
+}
+
+/// Like `run_git`, but returns stdout — used to inspect `git status` before
+/// committing the fixer's work.
+fn git_stdout(root: &Path, args: &[&str]) -> Result<String, FixerError> {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .output()
+        .map_err(|e| FixerError(format!("spawn git: {e}")))?;
+    if !out.status.success() {
+        return Err(FixerError(format!(
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 #[cfg(test)]
