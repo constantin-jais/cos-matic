@@ -162,10 +162,7 @@ impl Fixer for ClaudeFixer {
         let wt_str = wt.to_string_lossy().into_owned();
 
         // Isolate: a fresh worktree on a new branch off HEAD. Never on `main`.
-        run_git(
-            &self.repo_root,
-            &["worktree", "add", "-b", &branch, &wt_str, "HEAD"],
-        )?;
+        fresh_worktree(&self.repo_root, &branch, &wt_str)?;
 
         // Hand off to the fixer agent — one attempt, confined to the worktree.
         let prompt = format!(
@@ -238,6 +235,22 @@ fn run_git(root: &Path, args: &[&str]) -> Result<(), FixerError> {
     Ok(())
 }
 
+/// Create a fresh worktree + branch off HEAD, discarding any leftover from a
+/// prior attempt. The loop may retry (ADR: loop-bounded-retry); a retry is a
+/// clean re-do, so we remove the previous worktree/branch (best effort) before
+/// recreating — otherwise `worktree add -b` fails with "branch already exists".
+fn fresh_worktree(repo_root: &Path, branch: &str, wt: &str) -> Result<(), FixerError> {
+    let _ = Command::new("git")
+        .args(["worktree", "remove", "--force", wt])
+        .current_dir(repo_root)
+        .output();
+    let _ = Command::new("git")
+        .args(["branch", "-D", branch])
+        .current_dir(repo_root)
+        .output();
+    run_git(repo_root, &["worktree", "add", "-b", branch, wt, "HEAD"])
+}
+
 /// Commit the fixer's staged work with a stable bot identity. A fresh CI runner
 /// has no configured git user, so a bare `git commit` fails with "Author identity
 /// unknown" — setting it per-invocation keeps the orchestrator self-contained
@@ -295,10 +308,7 @@ impl Fixer for StubFixer {
             .join(format!("issue-{}", req.issue));
         let wt_str = wt.to_string_lossy().into_owned();
 
-        run_git(
-            &self.repo_root,
-            &["worktree", "add", "-b", &branch, &wt_str, "HEAD"],
-        )?;
+        fresh_worktree(&self.repo_root, &branch, &wt_str)?;
 
         // The "fix": append an auditable marker line. Harmless and never breaks
         // the build, so the branch sails through CI and the green-only gate.
