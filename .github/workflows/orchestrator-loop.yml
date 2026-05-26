@@ -34,6 +34,7 @@ permissions:
   contents: write # publish: push the fix branch
   issues: write # incident -> issue, close
   pull-requests: write # publish/automerge: open + merge the PR
+  checks: read # automerge gate: read the PR's check status via github.token
 
 # Never overlap autonomous runs.
 concurrency:
@@ -80,10 +81,11 @@ jobs:
       - name: Loop (live)
         if: inputs.mode == 'live' && vars.AOM_SANDBOX == 'true'
         env:
-          # A fine-grained PAT, NOT github.token: a branch pushed by github.token
-          # does not trigger CI, so the merge gate would never see green checks.
-          # Scope it to contents+issues+pull_requests on the sandbox repo only.
-          GITHUB_TOKEN: ${{ secrets.AOM_BOT_TOKEN }}
+          # The bot's git push (via the checkout PAT, below) is what triggers CI;
+          # the gh calls here — read the gate's checks, open + merge the PR — use
+          # the runner's github.token, which reads its own repo's checks without
+          # the PAT needing to carry a Checks scope.
+          GITHUB_TOKEN: ${{ github.token }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # claude (real LLM) or stub (deterministic, no Anthropic key needed).
           AOM_FIXER: ${{ inputs.fixer }}
