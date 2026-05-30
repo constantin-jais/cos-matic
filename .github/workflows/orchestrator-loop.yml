@@ -81,11 +81,14 @@ jobs:
       - name: Loop (live)
         if: inputs.mode == 'live' && vars.AOM_SANDBOX == 'true'
         env:
-          # The bot's git push (via the checkout PAT, below) is what triggers CI;
-          # the gh calls here — read the gate's checks, open + merge the PR — use
-          # the runner's github.token, which reads its own repo's checks without
-          # the PAT needing to carry a Checks scope.
-          GITHUB_TOKEN: ${{ github.token }}
+          # Two tokens, each at its minimal role. The PAT does the writes —
+          # push (triggers CI, via the checkout token below), open the PR, merge —
+          # because a user PAT is not subject to the "Actions may create/approve
+          # PRs" repo restriction. The runner's github.token is handed to the gate
+          # alone (AOM_CHECKS_TOKEN) to *read* check status, so the PAT needs no
+          # Checks scope and the repo needs no Actions-can-approve-PRs setting.
+          GITHUB_TOKEN: ${{ secrets.AOM_BOT_TOKEN }}
+          AOM_CHECKS_TOKEN: ${{ github.token }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # claude (real LLM) or stub (deterministic, no Anthropic key needed).
           AOM_FIXER: ${{ inputs.fixer }}

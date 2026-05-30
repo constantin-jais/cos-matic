@@ -225,8 +225,19 @@ impl Default for GhChecksGate {
 
 impl GhChecksGate {
     fn poll_once(&self, req: &MergeRequest) -> Result<PollState, MergeError> {
-        let out = Command::new("gh")
-            .args(["pr", "checks", &req.branch, "--json", "name,bucket"])
+        let mut cmd = Command::new("gh");
+        cmd.args(["pr", "checks", &req.branch, "--json", "name,bucket"]);
+        // Reading checks needs a different scope than writing them: let the
+        // caller hand the gate a dedicated read-only token (e.g. a CI runner's
+        // github.token) via AOM_CHECKS_TOKEN, so the write token (which pushes,
+        // opens, and merges the PR) need not also carry a Checks scope. `gh`
+        // prefers GH_TOKEN over GITHUB_TOKEN, so this only affects this call.
+        if let Ok(tok) = std::env::var("AOM_CHECKS_TOKEN")
+            && !tok.is_empty()
+        {
+            cmd.env("GH_TOKEN", tok);
+        }
+        let out = cmd
             .output()
             .map_err(|e| MergeError(format!("spawn gh: {e}")))?;
         // `gh pr checks` exits non-zero when checks are merely failing (1) or
