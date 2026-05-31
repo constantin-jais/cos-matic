@@ -170,10 +170,10 @@ enum PollState {
     Settled(Verdict),
     /// At least one check is still running — worth waiting for.
     Pending,
-    /// A PR exists but has no checks yet — they may still register; worth waiting.
+    /// No readable checks yet: either none have registered after a fresh push, or
+    /// `gh` reports "no checks" before the first one appears. In the loop the PR
+    /// always exists, so this means "not yet", not "never" — worth waiting.
     NoChecks,
-    /// No PR at all — nothing to wait for (terminal).
-    NoPr,
 }
 
 /// Classify a set of `(name, bucket)` checks into a poll state. Pure, so the
@@ -242,12 +242,12 @@ impl GhChecksGate {
             .map_err(|e| MergeError(format!("spawn gh: {e}")))?;
         // `gh pr checks` exits non-zero when checks are merely failing (1) or
         // pending (8) — that is status, not error — so classify from the JSON,
-        // never the exit code. A body that is not a JSON array means there is no
-        // PR to check.
+        // never the exit code. A non-array body means no checks are readable yet
+        // (none registered, or "no checks reported" right after a push): wait.
         let Ok(serde_json::Value::Array(arr)) =
             serde_json::from_slice::<serde_json::Value>(&out.stdout)
         else {
-            return Ok(PollState::NoPr);
+            return Ok(PollState::NoChecks);
         };
         let checks: Vec<(String, String)> = arr
             .iter()
@@ -268,9 +268,8 @@ impl Gate for GhChecksGate {
         loop {
             match self.poll_once(req)? {
                 PollState::Settled(v) => return Ok(v),
-                PollState::NoPr => return Ok(Verdict::Unknown),
-                // Pending, or a PR whose checks have not registered yet: wait for
-                // them to settle, bounded by the timeout (then fail-closed).
+                // Pending, or checks not registered yet: wait for them to settle,
+                // bounded by the timeout (then fail-closed to Unknown).
                 PollState::NoChecks | PollState::Pending => {
                     if Instant::now() >= deadline {
                         return Ok(Verdict::Unknown);
