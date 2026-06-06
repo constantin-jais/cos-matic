@@ -1,8 +1,10 @@
 name: ci
 
 on:
+  # PRs are gated by `pull_request`; `push` only verifies the default branch
+  # post-merge. A fix branch otherwise ran CI twice (push + PR) for the same SHA.
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 env:
