@@ -2,16 +2,17 @@
 //! merges without attached green evidence** — plus the binding envelope
 //! (kill-switch, scope-fence, rate-limit) and a zero-PII audit. The gate verdict
 //! and the merge are traits, so the whole decision is proven offline; the real
-//! CI check and merge (via `gh`) are the live boundary. This is the action that
-//! lands code, so ADR: workspace-and-orchestrator-charter is fully binding here.
+//! CI check and merge (via the `Forge`/octocrab) are the live boundary. This is
+//! the action that lands code, so ADR: workspace-and-orchestrator-charter is
+//! fully binding here.
 
 use std::path::Path;
-use std::process::Command;
 use std::time::{Duration, Instant};
 
+use async_trait::async_trait;
 use serde::Serialize;
 
-use crate::forge::RepoId;
+use crate::forge::{Forge, MergeStrategy, RepoId};
 
 /// A branch proposed for an autonomous merge.
 #[derive(Debug, Clone)]
@@ -31,7 +32,7 @@ pub enum Verdict {
     Unknown,
 }
 
-/// A gate or merge failure (spawn, API, parse).
+/// A gate or merge failure (network, API).
 #[derive(Debug)]
 pub struct MergeError(pub String);
 
@@ -44,14 +45,16 @@ impl std::fmt::Display for MergeError {
 impl std::error::Error for MergeError {}
 
 /// Produces the evidence verdict for a branch (CI status / a local gate run).
+#[async_trait(?Send)]
 pub trait Gate {
-    fn verdict(&self, req: &MergeRequest) -> Result<Verdict, MergeError>;
+    async fn verdict(&self, req: &MergeRequest) -> Result<Verdict, MergeError>;
 }
 
-/// Performs the actual merge once the gate is green. Real impl = `gh pr merge`.
+/// Performs the actual merge once the gate is green. Real impl = forge merge.
+#[async_trait(?Send)]
 pub trait Merger {
     /// Merge the branch and return a reference (URL / sha) to the merge.
-    fn merge(&self, req: &MergeRequest) -> Result<String, MergeError>;
+    async fn merge(&self, req: &MergeRequest) -> Result<String, MergeError>;
 }
 
 /// The binding envelope for an autonomous merge (ADR: workspace-and-orchestrator-charter).
@@ -85,7 +88,7 @@ impl MergeOutcome {
 /// Gate-and-merge inside the envelope. The merger is invoked **only** on a Green
 /// verdict; Red and Unknown both refuse (fail-closed). Envelope violations refuse
 /// without ever consulting the gate or merger.
-pub fn auto_merge<G: Gate + ?Sized, M: Merger + ?Sized>(
+pub async fn auto_merge<G: Gate + ?Sized, M: Merger + ?Sized>(
     gate: &G,
     merger: &M,
     env: &MergeEnvelope,
@@ -114,9 +117,9 @@ pub fn auto_merge<G: Gate + ?Sized, M: Merger + ?Sized>(
         });
     }
     // CARDINAL RULE: nothing merges without attached green evidence.
-    match gate.verdict(req)? {
+    match gate.verdict(req).await? {
         Verdict::Green => {
-            let reference = merger.merge(req)?;
+            let reference = merger.merge(req).await?;
             Ok(MergeOutcome::Merged { reference })
         }
         Verdict::Red { reasons } => Ok(MergeOutcome::Refused {
@@ -170,15 +173,15 @@ enum PollState {
     Settled(Verdict),
     /// At least one check is still running — worth waiting for.
     Pending,
-    /// No readable checks yet: either none have registered after a fresh push, or
-    /// `gh` reports "no checks" before the first one appears. In the loop the PR
-    /// always exists, so this means "not yet", not "never" — worth waiting.
+    /// No readable checks yet: none have registered after a fresh push. In the
+    /// loop the PR always exists, so this means "not yet", not "never" — worth
+    /// waiting.
     NoChecks,
 }
 
 /// Classify a set of `(name, bucket)` checks into a poll state. Pure, so the
-/// branching (which `gh` buckets mean pass/fail/wait) is unit-tested; only the
-/// `gh` call and the wait around it are the live boundary.
+/// branching (which buckets mean pass/fail/wait) is unit-tested; only the forge
+/// call and the wait around it are the live boundary.
 fn classify(checks: &[(String, String)]) -> PollState {
     if checks.is_empty() {
         return PollState::NoChecks;
@@ -202,113 +205,54 @@ fn classify(checks: &[(String, String)]) -> PollState {
     }
 }
 
-/// Real gate: the branch's PR checks via `gh`, **waited until they settle**. A
-/// merge gate that read a freshly-pushed PR once and called its pending checks
-/// `Unknown` would block every real run; instead it polls (every `interval`, up
-/// to `timeout`) until the checks pass or fail. All passing -> Green; any failing
-/// -> Red; no PR / no checks / still pending at the deadline -> Unknown
-/// (fail-closed). The poll loop (subprocess + sleep) is the live boundary; the
+/// Real gate: the branch's PR checks via the `Forge`, **waited until they
+/// settle**. A merge gate that read a freshly-pushed PR once and called its
+/// pending checks `Unknown` would block every real run; instead it polls (every
+/// `interval`, up to `timeout`) until the checks pass or fail. All passing ->
+/// Green; any failing -> Red; no PR / still pending at the deadline -> Unknown
+/// (fail-closed). The poll loop (forge call + sleep) is the live boundary; the
 /// classification is unit-tested.
-pub struct GhChecksGate {
+pub struct ForgeGate<'a, F: Forge + ?Sized> {
+    pub forge: &'a F,
     pub timeout: Duration,
     pub interval: Duration,
 }
 
-impl Default for GhChecksGate {
-    fn default() -> Self {
+impl<'a, F: Forge + ?Sized> ForgeGate<'a, F> {
+    /// Default cadence: poll every 10s, up to 3 minutes.
+    pub fn new(forge: &'a F) -> Self {
         Self {
+            forge,
             timeout: Duration::from_secs(180),
             interval: Duration::from_secs(10),
         }
     }
 }
 
-impl GhChecksGate {
-    fn poll_once(&self, req: &MergeRequest) -> Result<PollState, MergeError> {
-        // Read check runs via the REST API, not `gh pr checks`: the latter uses
-        // the statusCheckRollup GraphQL, which a CI runner's github.token cannot
-        // resolve (it returns nothing even with checks+statuses:read — proven by
-        // a live run). The REST endpoint reads fine with checks:read, handles a
-        // branch name containing slashes, and the jq maps each run to the same
-        // pass/fail/pending/skipping buckets `classify` already understands.
-        let path = format!(
-            "repos/{}/{}/commits/{}/check-runs",
-            req.repo.owner, req.repo.name, req.branch
-        );
-        let jq = r#".check_runs[] | .name + "\t" + (if .status != "completed" then "pending" elif (.conclusion == "success" or .conclusion == "neutral") then "pass" elif .conclusion == "skipped" then "skipping" else "fail" end)"#;
-        let mut cmd = Command::new("gh");
-        cmd.args(["api", &path, "--jq", jq]);
-        // A dedicated read-only token (the runner's github.token via
-        // AOM_CHECKS_TOKEN) lets the write token skip a Checks scope; gh prefers
-        // GH_TOKEN over GITHUB_TOKEN, so this only affects this call.
-        if let Ok(tok) = std::env::var("AOM_CHECKS_TOKEN")
-            && !tok.is_empty()
+#[async_trait(?Send)]
+impl<F: Forge + Sync + ?Sized> Gate for ForgeGate<'_, F> {
+    async fn verdict(&self, req: &MergeRequest) -> Result<Verdict, MergeError> {
+        // No open PR for the branch -> nothing to gate; fail closed at once
+        // rather than polling to the timeout. Only reachable from a standalone
+        // automerge; the loop always publishes a PR first.
+        if self
+            .forge
+            .find_open_pr(&req.repo, &req.branch)
+            .await
+            .map_err(|e| MergeError(e.0))?
+            .is_none()
         {
-            cmd.env("GH_TOKEN", tok);
-        }
-        let out = cmd
-            .output()
-            .map_err(|e| MergeError(format!("spawn gh: {e}")))?;
-        if !out.status.success() {
-            // No commit/branch yet, or the API errored: nothing readable -> wait.
-            return Ok(PollState::NoChecks);
-        }
-        let body = String::from_utf8_lossy(&out.stdout);
-        let checks: Vec<(String, String)> = body
-            .lines()
-            .filter_map(|l| {
-                l.split_once('\t')
-                    .map(|(n, b)| (n.to_string(), b.to_string()))
-            })
-            .collect();
-        Ok(classify(&checks))
-    }
-
-    /// Is there an open PR for the branch? Lets the gate fail closed at once on a
-    /// branch with no PR rather than polling for checks that will never come.
-    fn pr_exists(&self, req: &MergeRequest) -> Result<bool, MergeError> {
-        let repo = format!("{}/{}", req.repo.owner, req.repo.name);
-        let mut cmd = Command::new("gh");
-        cmd.args([
-            "pr",
-            "list",
-            "--repo",
-            &repo,
-            "--head",
-            &req.branch,
-            "--state",
-            "open",
-            "--json",
-            "number",
-        ]);
-        if let Ok(tok) = std::env::var("AOM_CHECKS_TOKEN")
-            && !tok.is_empty()
-        {
-            cmd.env("GH_TOKEN", tok);
-        }
-        let out = cmd
-            .output()
-            .map_err(|e| MergeError(format!("spawn gh: {e}")))?;
-        let count = serde_json::from_slice::<serde_json::Value>(&out.stdout)
-            .ok()
-            .and_then(|v| v.as_array().map(|a| a.len()))
-            .unwrap_or(0);
-        Ok(count > 0)
-    }
-}
-
-impl Gate for GhChecksGate {
-    fn verdict(&self, req: &MergeRequest) -> Result<Verdict, MergeError> {
-        // No open PR for the branch -> nothing to gate; fail closed at once rather
-        // than polling to the timeout. Only reachable from a standalone automerge;
-        // the loop always publishes a PR first.
-        if !self.pr_exists(req)? {
             eprintln!("[gate] {}: no open PR -> Unknown", req.branch);
             return Ok(Verdict::Unknown);
         }
         let deadline = Instant::now() + self.timeout;
         let verdict = loop {
-            match self.poll_once(req)? {
+            let checks = self
+                .forge
+                .list_check_runs(&req.repo, &req.branch)
+                .await
+                .map_err(|e| MergeError(e.0))?;
+            match classify(&checks) {
                 PollState::Settled(v) => break v,
                 // Pending, or checks not registered yet: wait for them to settle,
                 // bounded by the timeout (then fail-closed to Unknown).
@@ -316,7 +260,7 @@ impl Gate for GhChecksGate {
                     if Instant::now() >= deadline {
                         break Verdict::Unknown;
                     }
-                    std::thread::sleep(self.interval);
+                    tokio::time::sleep(self.interval).await;
                 }
             }
         };
@@ -327,23 +271,34 @@ impl Gate for GhChecksGate {
     }
 }
 
-/// Real merger: `gh pr merge --rebase` for the branch. Reversible by revert.
-pub struct GhMerger;
+/// Real merger: a rebase merge of the branch's PR via the `Forge`. Reversible by
+/// revert. octocrab merges by PR number, so it looks the PR up first.
+pub struct ForgeMerger<'a, F: Forge + ?Sized> {
+    pub forge: &'a F,
+}
 
-impl Merger for GhMerger {
-    fn merge(&self, req: &MergeRequest) -> Result<String, MergeError> {
-        let out = Command::new("gh")
-            .args(["pr", "merge", &req.branch, "--rebase"])
-            .output()
-            .map_err(|e| MergeError(format!("spawn gh: {e}")))?;
-        if !out.status.success() {
-            return Err(MergeError(format!(
-                "gh pr merge failed: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            )));
-        }
+impl<'a, F: Forge + ?Sized> ForgeMerger<'a, F> {
+    pub fn new(forge: &'a F) -> Self {
+        Self { forge }
+    }
+}
+
+#[async_trait(?Send)]
+impl<F: Forge + Sync + ?Sized> Merger for ForgeMerger<'_, F> {
+    async fn merge(&self, req: &MergeRequest) -> Result<String, MergeError> {
+        let pr = self
+            .forge
+            .find_open_pr(&req.repo, &req.branch)
+            .await
+            .map_err(|e| MergeError(e.0))?
+            .ok_or_else(|| MergeError(format!("no open PR for {}", req.branch)))?;
+        let reference = self
+            .forge
+            .merge_pr(&req.repo, pr.number, MergeStrategy::Rebase)
+            .await
+            .map_err(|e| MergeError(e.0))?;
         eprintln!("[merge] {} merged", req.branch);
-        Ok(format!("merged {}", req.branch))
+        Ok(reference)
     }
 }
 
@@ -352,10 +307,12 @@ mod tests {
     use std::cell::Cell;
 
     use super::*;
+    use crate::forge::FakeForge;
 
     struct FakeGate(Verdict);
+    #[async_trait(?Send)]
     impl Gate for FakeGate {
-        fn verdict(&self, _req: &MergeRequest) -> Result<Verdict, MergeError> {
+        async fn verdict(&self, _req: &MergeRequest) -> Result<Verdict, MergeError> {
             Ok(self.0.clone())
         }
     }
@@ -371,8 +328,9 @@ mod tests {
             }
         }
     }
+    #[async_trait(?Send)]
     impl Merger for FakeMerger {
-        fn merge(&self, _req: &MergeRequest) -> Result<String, MergeError> {
+        async fn merge(&self, _req: &MergeRequest) -> Result<String, MergeError> {
             self.merged.set(true);
             Ok("fake-merge".to_string())
         }
@@ -398,8 +356,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn green_merges() {
+    #[tokio::test]
+    async fn green_merges() {
         let m = FakeMerger::new();
         let r = auto_merge(
             &FakeGate(Verdict::Green),
@@ -408,24 +366,27 @@ mod tests {
             &req(),
             0,
         )
+        .await
         .unwrap();
         assert!(matches!(r, MergeOutcome::Merged { .. }));
         assert!(m.merged.get(), "a green branch is merged");
     }
 
-    #[test]
-    fn red_never_merges() {
+    #[tokio::test]
+    async fn red_never_merges() {
         let m = FakeMerger::new();
         let gate = FakeGate(Verdict::Red {
             reasons: vec!["tests".into()],
         });
-        let r = auto_merge(&gate, &m, &env(true, vec![repo()], 1), &req(), 0).unwrap();
+        let r = auto_merge(&gate, &m, &env(true, vec![repo()], 1), &req(), 0)
+            .await
+            .unwrap();
         assert!(matches!(r, MergeOutcome::Refused { .. }));
         assert!(!m.merged.get(), "CARDINAL: a red branch is NEVER merged");
     }
 
-    #[test]
-    fn unknown_fails_closed() {
+    #[tokio::test]
+    async fn unknown_fails_closed() {
         let m = FakeMerger::new();
         let r = auto_merge(
             &FakeGate(Verdict::Unknown),
@@ -434,6 +395,7 @@ mod tests {
             &req(),
             0,
         )
+        .await
         .unwrap();
         assert!(matches!(r, MergeOutcome::Refused { .. }));
         assert!(
@@ -442,8 +404,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn kill_switch_refuses_before_gating() {
+    #[tokio::test]
+    async fn kill_switch_refuses_before_gating() {
         let m = FakeMerger::new();
         let r = auto_merge(
             &FakeGate(Verdict::Green),
@@ -452,13 +414,14 @@ mod tests {
             &req(),
             0,
         )
+        .await
         .unwrap();
         assert!(matches!(r, MergeOutcome::Refused { .. }));
         assert!(!m.merged.get());
     }
 
-    #[test]
-    fn scope_fence_refuses_off_allowlist() {
+    #[tokio::test]
+    async fn scope_fence_refuses_off_allowlist() {
         let m = FakeMerger::new();
         let r = auto_merge(
             &FakeGate(Verdict::Green),
@@ -467,6 +430,7 @@ mod tests {
             &req(),
             0,
         )
+        .await
         .unwrap();
         match r {
             MergeOutcome::Refused { reason } => assert!(reason.contains("scope-fence")),
@@ -475,8 +439,8 @@ mod tests {
         assert!(!m.merged.get());
     }
 
-    #[test]
-    fn rate_limit_refuses_when_exhausted() {
+    #[tokio::test]
+    async fn rate_limit_refuses_when_exhausted() {
         let m = FakeMerger::new();
         let r = auto_merge(
             &FakeGate(Verdict::Green),
@@ -485,6 +449,7 @@ mod tests {
             &req(),
             1,
         )
+        .await
         .unwrap();
         match r {
             MergeOutcome::Refused { reason } => assert!(reason.contains("rate-limit")),
@@ -506,6 +471,54 @@ mod tests {
         assert_eq!(v["repo"], "o/n");
         assert_eq!(v["outcome"], "merged");
         assert_eq!(v.as_object().unwrap().len(), 5);
+    }
+
+    // --- the forge-backed gate/merger, exercised against the in-memory forge ---
+
+    fn fast_gate<F: Forge + ?Sized>(forge: &F) -> ForgeGate<'_, F> {
+        ForgeGate {
+            forge,
+            timeout: Duration::from_millis(50),
+            interval: Duration::from_millis(5),
+        }
+    }
+
+    #[tokio::test]
+    async fn forge_gate_no_pr_is_unknown() {
+        let forge = FakeForge::new();
+        assert_eq!(
+            fast_gate(&forge).verdict(&req()).await.unwrap(),
+            Verdict::Unknown
+        );
+    }
+
+    #[tokio::test]
+    async fn forge_gate_all_pass_is_green() {
+        let forge = FakeForge::new()
+            .with_pr("aom/fix/issue-8", 1)
+            .with_checks(&[("ci", "pass"), ("lint", "pass")]);
+        assert_eq!(
+            fast_gate(&forge).verdict(&req()).await.unwrap(),
+            Verdict::Green
+        );
+    }
+
+    #[tokio::test]
+    async fn forge_gate_a_fail_is_red() {
+        let forge = FakeForge::new()
+            .with_pr("aom/fix/issue-8", 1)
+            .with_checks(&[("ci", "pass"), ("lint", "fail")]);
+        assert!(matches!(
+            fast_gate(&forge).verdict(&req()).await.unwrap(),
+            Verdict::Red { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn forge_merger_merges_the_open_pr() {
+        let forge = FakeForge::new().with_pr("aom/fix/issue-8", 7);
+        let r = ForgeMerger::new(&forge).merge(&req()).await.unwrap();
+        assert!(r.contains("#7"), "merges the looked-up PR number");
     }
 
     fn checks(pairs: &[(&str, &str)]) -> Vec<(String, String)> {

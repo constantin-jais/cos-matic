@@ -1,9 +1,12 @@
 //! Forge: the GitHub-facing seam. A `Forge` trait (so logic is testable with a
 //! fake) plus the idempotent `open_or_reuse`. The real client (octocrab) lives
-//! in `GithubForge`; network access is confined to this module (ADR: github-via-octocrab).
+//! in `GithubForge`; **all** network access — issues, PRs, check status, merge —
+//! is confined to this module (ADR: orchestrator-consolidated-on-octocrab,
+//! ADR: github-via-octocrab).
 
 use async_trait::async_trait;
 use octocrab::Octocrab;
+use octocrab::params::repos::Commitish;
 
 use crate::incident::{Incident, issue_body_with_marker};
 
@@ -40,6 +43,20 @@ pub struct IssueRef {
     pub url: String,
 }
 
+/// A reference to a created/found pull request.
+#[derive(Debug, Clone)]
+pub struct PrRef {
+    pub number: u64,
+    pub url: String,
+}
+
+/// How to merge a PR. Only rebase today; extensible (squash/merge) without
+/// touching call sites.
+#[derive(Debug, Clone, Copy)]
+pub enum MergeStrategy {
+    Rebase,
+}
+
 /// A forge operation failure (network, auth, API).
 #[derive(Debug)]
 pub struct ForgeError(pub String);
@@ -51,6 +68,20 @@ impl std::fmt::Display for ForgeError {
 }
 
 impl std::error::Error for ForgeError {}
+
+/// Map a check run's `conclusion` to the gate's bucket. A run with no conclusion
+/// has not completed (queued / in-progress) -> `pending`; `success`/`neutral`
+/// pass; `skipped` is a final, non-blocking state; anything else (`failure`,
+/// `cancelled`, `timed_out`, …) fails. This is the Rust home of the mapping the
+/// gate's old `gh ... --jq` filter used to do.
+fn check_bucket(conclusion: Option<&str>) -> &'static str {
+    match conclusion {
+        None => "pending",
+        Some("success") | Some("neutral") => "pass",
+        Some("skipped") => "skipping",
+        Some(_) => "fail",
+    }
+}
 
 /// The GitHub-facing operations the loop needs. Async; implemented by
 /// `GithubForge` (real) and a fake in tests.
@@ -71,6 +102,34 @@ pub trait Forge {
         body: &str,
         labels: &[String],
     ) -> Result<IssueRef, ForgeError>;
+
+    /// List the branch's check runs, pre-classified into the buckets the gate's
+    /// `classify` understands (`pass`/`fail`/`pending`/`skipping`).
+    async fn list_check_runs(
+        &self,
+        repo: &RepoId,
+        git_ref: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError>;
+
+    /// Find an OPEN pull request whose head is `branch`.
+    async fn find_open_pr(&self, repo: &RepoId, branch: &str) -> Result<Option<PrRef>, ForgeError>;
+
+    /// Open a PR from `branch` into the repo's default branch.
+    async fn create_pr(
+        &self,
+        repo: &RepoId,
+        branch: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<PrRef, ForgeError>;
+
+    /// Merge a PR by number with `strategy`; returns a reference string.
+    async fn merge_pr(
+        &self,
+        repo: &RepoId,
+        pr_number: u64,
+        strategy: MergeStrategy,
+    ) -> Result<String, ForgeError>;
 }
 
 /// Idempotently open an issue for `inc`: reuse an open issue carrying the same
@@ -93,12 +152,21 @@ pub async fn open_or_reuse<F: Forge + ?Sized>(
 }
 
 /// The real forge: GitHub via octocrab. Network access lives only here.
+///
+/// Two clients hold the **2-token model** the live debug forced: reading check
+/// status needs a token with Checks read access, which the write token (a
+/// fine-grained PAT that pushes/opens/merges) may lack, while that PAT can do
+/// what a CI runner's `github.token` cannot (open a PR). `client` (write token)
+/// serves PR list/create/merge; `checks_client` (`AOM_CHECKS_TOKEN`, falling
+/// back to `client`) serves `list_check_runs` only.
 pub struct GithubForge {
     client: Octocrab,
+    checks_client: Octocrab,
 }
 
 impl GithubForge {
-    /// Build from a token in `GITHUB_TOKEN` or `GH_TOKEN` (never from `gh`).
+    /// Build from a token in `GITHUB_TOKEN` or `GH_TOKEN` (never from `gh`), with
+    /// an optional dedicated checks-read token in `AOM_CHECKS_TOKEN`.
     pub fn from_env() -> Result<Self, ForgeError> {
         let token = std::env::var("GITHUB_TOKEN")
             .or_else(|_| std::env::var("GH_TOKEN"))
@@ -112,7 +180,17 @@ impl GithubForge {
             .personal_token(token)
             .build()
             .map_err(|e| ForgeError(format!("octocrab build: {e}")))?;
-        Ok(Self { client })
+        let checks_client = match std::env::var("AOM_CHECKS_TOKEN") {
+            Ok(t) if !t.is_empty() => Octocrab::builder()
+                .personal_token(t)
+                .build()
+                .map_err(|e| ForgeError(format!("octocrab build (checks): {e}")))?,
+            _ => client.clone(),
+        };
+        Ok(Self {
+            client,
+            checks_client,
+        })
     }
 }
 
@@ -170,64 +248,242 @@ impl Forge for GithubForge {
             url: issue.html_url.to_string(),
         })
     }
+
+    async fn list_check_runs(
+        &self,
+        repo: &RepoId,
+        git_ref: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
+        // The REST check-runs endpoint, read with the checks token. The live
+        // debug proved a CI runner's github.token cannot resolve the
+        // `statusCheckRollup` GraphQL `gh pr checks` uses; this typed REST call
+        // reads fine with `checks:read` and handles a slash-bearing ref.
+        let runs = self
+            .checks_client
+            .checks(&repo.owner, &repo.name)
+            .list_check_runs_for_git_ref(Commitish(git_ref.to_string()))
+            .send()
+            .await
+            .map_err(|e| ForgeError(format!("list check-runs: {e}")))?;
+        Ok(runs
+            .check_runs
+            .into_iter()
+            .map(|c| (c.name, check_bucket(c.conclusion.as_deref()).to_string()))
+            .collect())
+    }
+
+    async fn find_open_pr(&self, repo: &RepoId, branch: &str) -> Result<Option<PrRef>, ForgeError> {
+        // Filter open PRs by head ref in Rust rather than via the API's
+        // `head=user:ref` param, whose format is a known footgun. The fix branch
+        // is recent, so it is in the first page.
+        let page = self
+            .client
+            .pulls(&repo.owner, &repo.name)
+            .list()
+            .state(octocrab::params::State::Open)
+            .per_page(100u8)
+            .send()
+            .await
+            .map_err(|e| ForgeError(format!("list PRs: {e}")))?;
+        Ok(page
+            .items
+            .into_iter()
+            .find(|p| p.head.as_ref().map(|h| h.ref_field.as_str()) == Some(branch))
+            .map(|p| PrRef {
+                number: p.number.unwrap_or_default(),
+                url: p.html_url.map(|u| u.to_string()).unwrap_or_default(),
+            }))
+    }
+
+    async fn create_pr(
+        &self,
+        repo: &RepoId,
+        branch: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<PrRef, ForgeError> {
+        // `gh pr create` auto-detected the base; the typed API needs it explicit.
+        let base = self
+            .client
+            .repos(&repo.owner, &repo.name)
+            .get()
+            .await
+            .map_err(|e| ForgeError(format!("get repo: {e}")))?
+            .default_branch
+            .unwrap_or_else(|| "main".to_string());
+        let pr = self
+            .client
+            .pulls(&repo.owner, &repo.name)
+            .create(title, branch, base)
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| ForgeError(format!("create PR: {e}")))?;
+        Ok(PrRef {
+            number: pr.number.unwrap_or_default(),
+            url: pr.html_url.map(|u| u.to_string()).unwrap_or_default(),
+        })
+    }
+
+    async fn merge_pr(
+        &self,
+        repo: &RepoId,
+        pr_number: u64,
+        strategy: MergeStrategy,
+    ) -> Result<String, ForgeError> {
+        let method = match strategy {
+            MergeStrategy::Rebase => octocrab::params::pulls::MergeMethod::Rebase,
+        };
+        let merged = self
+            .client
+            .pulls(&repo.owner, &repo.name)
+            .merge(pr_number)
+            .method(method)
+            .send()
+            .await
+            .map_err(|e| ForgeError(format!("merge PR #{pr_number}: {e}")))?;
+        if !merged.merged {
+            return Err(ForgeError(format!("PR #{pr_number} was not merged")));
+        }
+        Ok(format!("merged #{pr_number}"))
+    }
+}
+
+/// In-memory `Forge` for offline tests across modules (used by `forge` and
+/// `automerge` tests). Stores issues and PRs and returns canned check-runs.
+#[cfg(test)]
+pub(crate) struct FakeForge {
+    issues: std::sync::Mutex<Vec<(String, IssueRef)>>,
+    next: std::sync::Mutex<u64>,
+    prs: std::sync::Mutex<Vec<(String, PrRef)>>,
+    checks: std::sync::Mutex<Vec<(String, String)>>,
+}
+
+#[cfg(test)]
+impl FakeForge {
+    pub(crate) fn new() -> Self {
+        Self {
+            issues: std::sync::Mutex::new(Vec::new()),
+            next: std::sync::Mutex::new(1),
+            prs: std::sync::Mutex::new(Vec::new()),
+            checks: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Seed an open PR for `branch`.
+    pub(crate) fn with_pr(self, branch: &str, number: u64) -> Self {
+        self.prs.lock().unwrap().push((
+            branch.to_string(),
+            PrRef {
+                number,
+                url: format!("https://example.test/pull/{number}"),
+            },
+        ));
+        self
+    }
+
+    /// Seed the `(name, bucket)` check-runs `list_check_runs` returns.
+    pub(crate) fn with_checks(self, checks: &[(&str, &str)]) -> Self {
+        *self.checks.lock().unwrap() = checks
+            .iter()
+            .map(|(n, b)| (n.to_string(), b.to_string()))
+            .collect();
+        self
+    }
+}
+
+#[cfg(test)]
+#[async_trait]
+impl Forge for FakeForge {
+    async fn find_open_issue_by_marker(
+        &self,
+        _repo: &RepoId,
+        marker: &str,
+    ) -> Result<Option<IssueRef>, ForgeError> {
+        let issues = self.issues.lock().unwrap();
+        Ok(issues
+            .iter()
+            .find(|(body, _)| body.contains(marker))
+            .map(|(_, r)| r.clone()))
+    }
+
+    async fn create_issue(
+        &self,
+        _repo: &RepoId,
+        _title: &str,
+        body: &str,
+        _labels: &[String],
+    ) -> Result<IssueRef, ForgeError> {
+        let mut next = self.next.lock().unwrap();
+        let number = *next;
+        *next += 1;
+        let issue = IssueRef {
+            number,
+            url: format!("https://example.test/issues/{number}"),
+        };
+        self.issues
+            .lock()
+            .unwrap()
+            .push((body.to_string(), issue.clone()));
+        Ok(issue)
+    }
+
+    async fn list_check_runs(
+        &self,
+        _repo: &RepoId,
+        _git_ref: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
+        Ok(self.checks.lock().unwrap().clone())
+    }
+
+    async fn find_open_pr(
+        &self,
+        _repo: &RepoId,
+        branch: &str,
+    ) -> Result<Option<PrRef>, ForgeError> {
+        Ok(self
+            .prs
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(b, _)| b == branch)
+            .map(|(_, p)| p.clone()))
+    }
+
+    async fn create_pr(
+        &self,
+        _repo: &RepoId,
+        branch: &str,
+        _title: &str,
+        _body: &str,
+    ) -> Result<PrRef, ForgeError> {
+        let mut next = self.next.lock().unwrap();
+        let number = *next;
+        *next += 1;
+        let pr = PrRef {
+            number,
+            url: format!("https://example.test/pull/{number}"),
+        };
+        self.prs
+            .lock()
+            .unwrap()
+            .push((branch.to_string(), pr.clone()));
+        Ok(pr)
+    }
+
+    async fn merge_pr(
+        &self,
+        _repo: &RepoId,
+        pr_number: u64,
+        _strategy: MergeStrategy,
+    ) -> Result<String, ForgeError> {
+        Ok(format!("merged #{pr_number}"))
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use super::*;
-
-    /// In-memory forge: stores (body, ref) and matches a marker by substring.
-    struct FakeForge {
-        issues: Mutex<Vec<(String, IssueRef)>>,
-        next: Mutex<u64>,
-    }
-
-    impl FakeForge {
-        fn new() -> Self {
-            Self {
-                issues: Mutex::new(Vec::new()),
-                next: Mutex::new(1),
-            }
-        }
-    }
-
-    #[async_trait]
-    impl Forge for FakeForge {
-        async fn find_open_issue_by_marker(
-            &self,
-            _repo: &RepoId,
-            marker: &str,
-        ) -> Result<Option<IssueRef>, ForgeError> {
-            let issues = self.issues.lock().unwrap();
-            Ok(issues
-                .iter()
-                .find(|(body, _)| body.contains(marker))
-                .map(|(_, r)| r.clone()))
-        }
-
-        async fn create_issue(
-            &self,
-            _repo: &RepoId,
-            _title: &str,
-            body: &str,
-            _labels: &[String],
-        ) -> Result<IssueRef, ForgeError> {
-            let mut next = self.next.lock().unwrap();
-            let number = *next;
-            *next += 1;
-            let issue = IssueRef {
-                number,
-                url: format!("https://example.test/issues/{number}"),
-            };
-            self.issues
-                .lock()
-                .unwrap()
-                .push((body.to_string(), issue.clone()));
-            Ok(issue)
-        }
-    }
 
     fn repo() -> RepoId {
         RepoId {

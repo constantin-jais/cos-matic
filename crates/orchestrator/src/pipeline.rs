@@ -3,16 +3,18 @@
 //! **short-circuits at the first stage that does not advance**. The stages are
 //! abstracted behind a `Stages` trait, so the composition (ordering,
 //! short-circuit, envelope) is proven offline; `RealStages` wires the real
-//! primitives, the live boundary. ADR: workspace-and-orchestrator-charter
-//! governs the whole chain.
+//! primitives, the live boundary. The loop core is async (the forge is) but has
+//! no knowledge of its trigger — a CI workflow today, a daemon later, the same
+//! core. ADR: workspace-and-orchestrator-charter governs the whole chain.
 
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 
+use async_trait::async_trait;
 use serde::Serialize;
 
-use crate::forge::RepoId;
+use crate::forge::{Forge, GithubForge, RepoId};
 use crate::{automerge, deploy, dispatch};
 
 /// The incident driving one loop iteration.
@@ -36,18 +38,21 @@ impl std::fmt::Display for LoopError {
 
 impl std::error::Error for LoopError {}
 
-/// The loop's stages; each reports whether it advanced.
+/// The loop's stages; each reports whether it advanced. Async (the real publish
+/// and merge talk to the forge); kept `?Send` because the loop runs sequentially
+/// behind a single `block_on`, never spawned.
+#[async_trait(?Send)]
 pub trait Stages {
     /// Dispatch a bounded fix; returns the produced branch, or None if none.
-    fn dispatch(&self, req: &LoopRequest) -> Result<Option<String>, LoopError>;
+    async fn dispatch(&self, req: &LoopRequest) -> Result<Option<String>, LoopError>;
     /// Publish the branch (push + open a PR) so the gate has something to check;
     /// true if a PR is now open. Dispatch deliberately does not push — this is
     /// the distinct, opt-in step that does.
-    fn publish(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError>;
+    async fn publish(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError>;
     /// Gate-and-merge the branch on green evidence; true if merged.
-    fn automerge(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError>;
+    async fn automerge(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError>;
     /// Canary-deploy + smoke the merged result; true if promoted.
-    fn deploy(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError>;
+    async fn deploy(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError>;
 }
 
 /// The global envelope for the whole loop, on top of each stage's own.
@@ -84,7 +89,7 @@ impl LoopOutcome {
 /// Run the loop once. It stops at the first stage that does not advance — a later
 /// stage is **never reached** after an earlier one stops, so the loop is fail-safe
 /// by construction. Envelope refusals never touch a stage.
-pub fn run_loop<S: Stages + ?Sized>(
+pub async fn run_loop<S: Stages + ?Sized>(
     stages: &S,
     env: &LoopEnvelope,
     req: &LoopRequest,
@@ -112,7 +117,7 @@ pub fn run_loop<S: Stages + ?Sized>(
         });
     }
 
-    let branch = match stages.dispatch(req)? {
+    let branch = match stages.dispatch(req).await? {
         Some(b) => b,
         None => {
             return Ok(LoopOutcome::Stopped {
@@ -121,19 +126,19 @@ pub fn run_loop<S: Stages + ?Sized>(
             });
         }
     };
-    if !stages.publish(&branch, req)? {
+    if !stages.publish(&branch, req).await? {
         return Ok(LoopOutcome::Stopped {
             stage: "publish",
             reason: "branch was not published (push or PR failed)".to_string(),
         });
     }
-    if !stages.automerge(&branch, req)? {
+    if !stages.automerge(&branch, req).await? {
         return Ok(LoopOutcome::Stopped {
             stage: "automerge",
             reason: "branch was not merged (gate not green)".to_string(),
         });
     }
-    if !stages.deploy(&branch, req)? {
+    if !stages.deploy(&branch, req).await? {
         return Ok(LoopOutcome::Stopped {
             stage: "deploy",
             reason: "deploy rolled back (smoke not green)".to_string(),
@@ -149,7 +154,7 @@ pub fn run_loop<S: Stages + ?Sized>(
 /// terminal and never retried. On exhaustion the **last stop** is returned (its
 /// stage and reason), not a bare circuit-breaker notice, so the caller learns why
 /// the loop never landed.
-pub fn run_until_done<S: Stages + ?Sized>(
+pub async fn run_until_done<S: Stages + ?Sized>(
     stages: &S,
     env: &LoopEnvelope,
     req: &LoopRequest,
@@ -157,7 +162,7 @@ pub fn run_until_done<S: Stages + ?Sized>(
     let mut iteration = 0;
     let mut last_stop: Option<LoopOutcome> = None;
     loop {
-        match run_loop(stages, env, req, iteration)? {
+        match run_loop(stages, env, req, iteration).await? {
             done @ LoopOutcome::Completed { .. } => return Ok(done),
             LoopOutcome::Refused { reason } => {
                 // Circuit-breaker exhaustion after one or more stops returns the
@@ -209,10 +214,12 @@ pub fn append_audit(
 }
 
 /// The real stages: each wires the corresponding primitive, scope-fenced to the
-/// loop's repo. Subprocess + network throughout, so it is exercised live, not in
-/// unit tests. The deploy commands come from the environment, like `aom deploy`.
+/// loop's repo. The forge (octocrab) handles PR/check/merge; only `git push`
+/// stays a subprocess. Exercised live, not in unit tests. The deploy commands
+/// come from the environment, like `aom deploy`.
 pub struct RealStages {
     pub repo_root: PathBuf,
+    pub forge: GithubForge,
     pub deploy_canary: String,
     pub deploy_promote: String,
     pub deploy_rollback: String,
@@ -223,8 +230,9 @@ fn one(repo: &RepoId) -> Vec<RepoId> {
     vec![repo.clone()]
 }
 
+#[async_trait(?Send)]
 impl Stages for RealStages {
-    fn dispatch(&self, req: &LoopRequest) -> Result<Option<String>, LoopError> {
+    async fn dispatch(&self, req: &LoopRequest) -> Result<Option<String>, LoopError> {
         let env = dispatch::Envelope {
             enabled: true,
             allowlist: one(&req.repo),
@@ -251,12 +259,13 @@ impl Stages for RealStages {
         })
     }
 
-    fn publish(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError> {
+    async fn publish(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError> {
         // Push the local fix branch, then open a PR so the gate has a target.
         // Force: the fix branch is the orchestrator's own throwaway, recreated
         // fresh off HEAD each attempt, so it must overwrite any stale branch a
         // prior (failed) attempt left on the remote — otherwise the fresh branch
-        // is not a fast-forward and the push is rejected.
+        // is not a fast-forward and the push is rejected. `git push` stays a
+        // subprocess — it is VCS, not forge API.
         let pushed = Command::new("git")
             .args(["push", "--force", "-u", "origin", branch])
             .current_dir(&self.repo_root)
@@ -270,36 +279,25 @@ impl Stages for RealStages {
         } else {
             req.body.as_str()
         };
-        let pr = Command::new("gh")
-            .args([
-                "pr", "create", "--head", branch, "--title", &req.title, "--body", body,
-            ])
-            .current_dir(&self.repo_root)
-            .status()
-            .map_err(|e| LoopError(format!("gh pr create: {e}")))?;
-        if pr.success() {
-            return Ok(true);
+        match self
+            .forge
+            .create_pr(&req.repo, branch, &req.title, body)
+            .await
+        {
+            Ok(_) => Ok(true),
+            // `create_pr` fails when a PR for this branch already exists (e.g. a
+            // retry of an earlier attempt). The gate only needs an open PR, so
+            // reuse one if it exists; otherwise the publish did not land.
+            Err(_) => Ok(self
+                .forge
+                .find_open_pr(&req.repo, branch)
+                .await
+                .map_err(|e| LoopError(e.0))?
+                .is_some()),
         }
-        // `gh pr create` fails when a PR for this branch already exists (e.g. a
-        // retry of an earlier attempt). The gate only needs an open PR, so reuse
-        // it. Use `pr list` (existence only) rather than `pr view`, which pulls
-        // the check-status rollup and would need a broader token scope just to
-        // answer "does a PR exist?".
-        let out = Command::new("gh")
-            .args([
-                "pr", "list", "--head", branch, "--state", "open", "--json", "number",
-            ])
-            .current_dir(&self.repo_root)
-            .output()
-            .map_err(|e| LoopError(format!("gh pr list: {e}")))?;
-        let open_prs = serde_json::from_slice::<serde_json::Value>(&out.stdout)
-            .ok()
-            .and_then(|v| v.as_array().map(|a| a.len()))
-            .unwrap_or(0);
-        Ok(open_prs > 0)
     }
 
-    fn automerge(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError> {
+    async fn automerge(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError> {
         let env = automerge::MergeEnvelope {
             enabled: true,
             allowlist: one(&req.repo),
@@ -310,17 +308,18 @@ impl Stages for RealStages {
             repo: req.repo.clone(),
         };
         let outcome = automerge::auto_merge(
-            &automerge::GhChecksGate::default(),
-            &automerge::GhMerger,
+            &automerge::ForgeGate::new(&self.forge),
+            &automerge::ForgeMerger::new(&self.forge),
             &env,
             &mreq,
             0,
         )
+        .await
         .map_err(|e| LoopError(e.0))?;
         Ok(matches!(outcome, automerge::MergeOutcome::Merged { .. }))
     }
 
-    fn deploy(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError> {
+    async fn deploy(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError> {
         let env = deploy::DeployEnvelope {
             enabled: true,
             allowlist: one(&req.repo),
@@ -363,20 +362,21 @@ mod tests {
         reached: RefCell<Vec<&'static str>>,
     }
 
+    #[async_trait(?Send)]
     impl Stages for FakeStages {
-        fn dispatch(&self, _req: &LoopRequest) -> Result<Option<String>, LoopError> {
+        async fn dispatch(&self, _req: &LoopRequest) -> Result<Option<String>, LoopError> {
             self.reached.borrow_mut().push("dispatch");
             Ok(self.dispatch_branch.map(String::from))
         }
-        fn publish(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
+        async fn publish(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
             self.reached.borrow_mut().push("publish");
             Ok(self.published)
         }
-        fn automerge(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
+        async fn automerge(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
             self.reached.borrow_mut().push("automerge");
             Ok(self.merged)
         }
-        fn deploy(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
+        async fn deploy(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
             self.reached.borrow_mut().push("deploy");
             Ok(self.promoted)
         }
@@ -418,10 +418,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn all_green_completes_in_order() {
+    #[tokio::test]
+    async fn all_green_completes_in_order() {
         let s = stages(Some("aom/fix/issue-8"), true, true, true);
-        let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0).unwrap();
+        let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0)
+            .await
+            .unwrap();
         assert!(matches!(r, LoopOutcome::Completed { .. }));
         assert_eq!(
             *s.reached.borrow(),
@@ -429,10 +431,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn dispatch_none_stops_before_publish() {
+    #[tokio::test]
+    async fn dispatch_none_stops_before_publish() {
         let s = stages(None, true, true, true);
-        let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0).unwrap();
+        let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0)
+            .await
+            .unwrap();
         match r {
             LoopOutcome::Stopped { stage, .. } => assert_eq!(stage, "dispatch"),
             other => panic!("expected stop at dispatch, got {other:?}"),
@@ -440,10 +444,12 @@ mod tests {
         assert_eq!(*s.reached.borrow(), ["dispatch"]);
     }
 
-    #[test]
-    fn unpublished_stops_before_merge() {
+    #[tokio::test]
+    async fn unpublished_stops_before_merge() {
         let s = stages(Some("b"), false, true, true);
-        let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0).unwrap();
+        let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0)
+            .await
+            .unwrap();
         match r {
             LoopOutcome::Stopped { stage, .. } => assert_eq!(stage, "publish"),
             other => panic!("expected stop at publish, got {other:?}"),
@@ -452,10 +458,12 @@ mod tests {
         assert_eq!(*s.reached.borrow(), ["dispatch", "publish"]);
     }
 
-    #[test]
-    fn unmerged_stops_before_deploy() {
+    #[tokio::test]
+    async fn unmerged_stops_before_deploy() {
         let s = stages(Some("b"), true, false, true);
-        let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0).unwrap();
+        let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0)
+            .await
+            .unwrap();
         match r {
             LoopOutcome::Stopped { stage, .. } => assert_eq!(stage, "automerge"),
             other => panic!("expected stop at automerge, got {other:?}"),
@@ -463,10 +471,12 @@ mod tests {
         assert_eq!(*s.reached.borrow(), ["dispatch", "publish", "automerge"]);
     }
 
-    #[test]
-    fn rolled_back_stops_at_deploy() {
+    #[tokio::test]
+    async fn rolled_back_stops_at_deploy() {
         let s = stages(Some("b"), true, true, false);
-        let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0).unwrap();
+        let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0)
+            .await
+            .unwrap();
         match r {
             LoopOutcome::Stopped { stage, .. } => assert_eq!(stage, "deploy"),
             other => panic!("expected stop at deploy, got {other:?}"),
@@ -477,18 +487,22 @@ mod tests {
         );
     }
 
-    #[test]
-    fn kill_switch_refuses_before_any_stage() {
+    #[tokio::test]
+    async fn kill_switch_refuses_before_any_stage() {
         let s = stages(Some("b"), true, true, true);
-        let r = run_loop(&s, &env(false, vec![repo()], 1), &req(), 0).unwrap();
+        let r = run_loop(&s, &env(false, vec![repo()], 1), &req(), 0)
+            .await
+            .unwrap();
         assert!(matches!(r, LoopOutcome::Refused { .. }));
         assert!(s.reached.borrow().is_empty(), "no stage runs when disabled");
     }
 
-    #[test]
-    fn scope_fence_refuses_off_allowlist() {
+    #[tokio::test]
+    async fn scope_fence_refuses_off_allowlist() {
         let s = stages(Some("b"), true, true, true);
-        let r = run_loop(&s, &env(true, vec![], 1), &req(), 0).unwrap();
+        let r = run_loop(&s, &env(true, vec![], 1), &req(), 0)
+            .await
+            .unwrap();
         match r {
             LoopOutcome::Refused { reason } => assert!(reason.contains("scope-fence")),
             other => panic!("expected scope-fence refusal, got {other:?}"),
@@ -496,10 +510,12 @@ mod tests {
         assert!(s.reached.borrow().is_empty());
     }
 
-    #[test]
-    fn circuit_breaker_refuses_when_exhausted() {
+    #[tokio::test]
+    async fn circuit_breaker_refuses_when_exhausted() {
         let s = stages(Some("b"), true, true, true);
-        let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 1).unwrap();
+        let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 1)
+            .await
+            .unwrap();
         match r {
             LoopOutcome::Refused { reason } => assert!(reason.contains("circuit-breaker")),
             other => panic!("expected circuit-breaker refusal, got {other:?}"),
@@ -528,52 +544,59 @@ mod tests {
         dispatch_ok_from: u32,
         calls: Cell<u32>,
     }
+    #[async_trait(?Send)]
     impl Stages for CountingStages {
-        fn dispatch(&self, _req: &LoopRequest) -> Result<Option<String>, LoopError> {
+        async fn dispatch(&self, _req: &LoopRequest) -> Result<Option<String>, LoopError> {
             let n = self.calls.get();
             self.calls.set(n + 1);
             Ok((n >= self.dispatch_ok_from).then(|| "b".to_string()))
         }
-        fn publish(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
+        async fn publish(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
             Ok(true)
         }
-        fn automerge(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
+        async fn automerge(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
             Ok(true)
         }
-        fn deploy(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
+        async fn deploy(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
             Ok(true)
         }
     }
 
-    #[test]
-    fn until_done_completes_on_first_pass() {
+    #[tokio::test]
+    async fn until_done_completes_on_first_pass() {
         let s = CountingStages {
             dispatch_ok_from: 0,
             calls: Cell::new(0),
         };
-        let r = run_until_done(&s, &env(true, vec![repo()], 3), &req()).unwrap();
+        let r = run_until_done(&s, &env(true, vec![repo()], 3), &req())
+            .await
+            .unwrap();
         assert!(matches!(r, LoopOutcome::Completed { .. }));
         assert_eq!(s.calls.get(), 1, "landed on the first pass");
     }
 
-    #[test]
-    fn until_done_retries_then_completes() {
+    #[tokio::test]
+    async fn until_done_retries_then_completes() {
         let s = CountingStages {
             dispatch_ok_from: 1,
             calls: Cell::new(0),
         };
-        let r = run_until_done(&s, &env(true, vec![repo()], 3), &req()).unwrap();
+        let r = run_until_done(&s, &env(true, vec![repo()], 3), &req())
+            .await
+            .unwrap();
         assert!(matches!(r, LoopOutcome::Completed { .. }));
         assert_eq!(s.calls.get(), 2, "stopped once, retried, then landed");
     }
 
-    #[test]
-    fn until_done_exhausts_and_returns_last_stop() {
+    #[tokio::test]
+    async fn until_done_exhausts_and_returns_last_stop() {
         let s = CountingStages {
             dispatch_ok_from: 99,
             calls: Cell::new(0),
         };
-        let r = run_until_done(&s, &env(true, vec![repo()], 3), &req()).unwrap();
+        let r = run_until_done(&s, &env(true, vec![repo()], 3), &req())
+            .await
+            .unwrap();
         match r {
             LoopOutcome::Stopped { stage, .. } => assert_eq!(stage, "dispatch"),
             other => panic!("expected the last stop, got {other:?}"),
@@ -581,13 +604,15 @@ mod tests {
         assert_eq!(s.calls.get(), 3, "tried exactly max_iterations times");
     }
 
-    #[test]
-    fn until_done_does_not_retry_envelope_refusal() {
+    #[tokio::test]
+    async fn until_done_does_not_retry_envelope_refusal() {
         let s = CountingStages {
             dispatch_ok_from: 0,
             calls: Cell::new(0),
         };
-        let r = run_until_done(&s, &env(false, vec![repo()], 3), &req()).unwrap();
+        let r = run_until_done(&s, &env(false, vec![repo()], 3), &req())
+            .await
+            .unwrap();
         assert!(matches!(r, LoopOutcome::Refused { .. }));
         assert_eq!(
             s.calls.get(),
