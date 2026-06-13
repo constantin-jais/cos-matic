@@ -46,6 +46,22 @@ uncovered attack surface" is answered by _removing most of the keys_.
   committed _at the core_, honestly **not** at post-store artifacts (App Thinning
   and multi-APK splitting are non-deterministic by design).
 
+### Audit dependencies as a release gate
+
+`./scripts/audit-deps.sh` is the canonical local/CI gate: `cargo audit` for
+RustSec advisories plus `cargo deny` for advisories, licenses, and sources. Two
+RustSec findings are temporarily ignored with written reasons in both the script
+and `deny.toml`:
+
+- `RUSTSEC-2023-0071` (`rsa` via `octocrab` → `jsonwebtoken`) — AOM does not use
+  RSA private-key operations directly; no upstream fixed version is available.
+- `RUSTSEC-2025-0057` (`fxhash` via `inquire`) — local interactive prompt path,
+  not a network/runtime trust boundary.
+
+Those exceptions are not invisible debt: each final stable release must either
+remove them, upgrade away from them, or explicitly re-accept them in the release
+notes.
+
 ### Sovereignty as a typed invariant, enforced as a gate
 
 Store channels are permitted **for reach** — but only if a **store-free install

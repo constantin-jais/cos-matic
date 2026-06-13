@@ -160,6 +160,18 @@ aom library show <name>    # a domain's content
 aom goals -m harness.toml  # evaluate declared goals (hard-gate vs observability)
 ```
 
+## Dependency audit
+
+```sh
+./scripts/audit-deps.sh
+```
+
+The audit gate combines `cargo audit` and `cargo deny` (`deny.toml`) and is run
+in CI. Temporary RustSec exceptions are explicit in both places: `RUSTSEC-2023-0071`
+(`rsa`, transitive via `octocrab`/`jsonwebtoken`, no direct RSA-key use) and
+`RUSTSEC-2025-0057` (`fxhash`, transitive via `inquire`, local prompt path).
+Remove or re-justify those exceptions before declaring a final stable release.
+
 ## Architecture
 
 ### Compiler pipeline
@@ -235,7 +247,7 @@ account-level risk (ADR-0019).
 | **Fixer isolation**     | `Fixer` trait → `FixerRuntime` (target)      | Today: headless Claude with an allow-list (`Edit Write Read Grep Glob Bash(cargo *)`), in an ephemeral runner. Target: gVisor (V1) → Firecracker microVM. (ADR-0023, ADR-0026 §2)                                                       |
 | **Policy**              | Typed TOML (`[autonomy]`, `[policy]`)        | Declarative, versionable, auditable. No OPA/Rego — a rule engine is overkill here. (ADR-0026 §3)                                                                                                                                        |
 | **Durability (future)** | SQLite run-state                             | Proto: the zero-PII JSONL audit. Target: a SQLite run-ledger for resume + replay. **Not** Temporal — an external service fights the self-hostable ethos. (ADR-0026 §4)                                                                  |
-| **Portability core**    | `aom-core` (pure, `wasm32`-ready)            | One I/O-free `compile()` → `Vec<RenderedFile>`; bound via UniFFI/WIT/wasm-bindgen, never reimplemented. (ADR-0029)                                                                                                                      |
+| **Portability core**    | pure `compile()` seam; `aom-core` target     | Today, `agent_o_matic::generate::compile()` is I/O-free and returns `Vec<RenderedFile>`; ADR-0029 targets extracting that seam into a standalone `aom-core` for WASM/FFI bindings.                                                       |
 | **Distribution seam**   | `Distributor` trait (target)                 | Append-only/forward-only publishing under the safety envelope; `compensate`, never rollback. (ADR-0030)                                                                                                                                 |
 | **Supply-chain**        | sigstore/cosign keyless, SLSA, SBOM (target) | Keyless/OIDC publishing — no long-lived secret; a store-free sovereign floor per platform as a CI gate. (ADR-0031)                                                                                                                      |
 | **Native UI**           | truly-native per platform (target)           | SwiftUI/Compose/WinUI/GTK over one Rust core; N native UIs ≠ N logic impls. (ADR-0032)                                                                                                                                                  |
@@ -331,7 +343,7 @@ cargo build --release
 cargo test --workspace                                  # offline; no live GitHub calls
 cargo clippy --workspace --all-targets -- -D warnings   # zero-warning gate
 cargo fmt --all --check
-aom generate --check                                    # dogfoods the compiler on this repo
+./target/release/aom generate --check --manifest examples/minimal/harness.toml  # dogfoods the compiler on this repo
 ```
 
 ## Contributing
@@ -344,7 +356,7 @@ are the spec. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and start with the
 ## Further reading
 
 - **[Orchestrator runbook](docs/orchestrator-runbook.md)** — set up + run the loop in CI.
-- **[ADR archive](docs/adr/)** — 28 decisions, the full reasoning.
+- **[ADR archive](docs/adr/)** — 32 decisions, the full reasoning.
 - **[Examples](examples/)** — a minimal `harness.toml`.
 
 ## License
