@@ -11,12 +11,14 @@ to exactly what the loop touches (ADR: operate-loop-as-scoped-ci-bot).
 | Mode        | GitHub credential                                       | Why                                                                                                                                                 | Anthropic                                                   |
 | ----------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | **dry-run** | built-in `github.token` (scoped by `permissions:`)      | read-only: resolves the repo and queries the merge gate; nothing outward                                                                            | none                                                        |
-| **live**    | a **fine-grained PAT** stored as secret `AOM_BOT_TOKEN` | a branch pushed by `github.token` does **not** trigger CI, so the gate would never see green checks — the PAT makes the bot's push start the checks | `ANTHROPIC_API_KEY` secret (the fixer is a headless Claude) |
+| **live**    | a **fine-grained PAT** stored as secret `AOM_BOT_TOKEN` | a branch pushed by `github.token` does **not** trigger CI, so the gate would never see green checks — the PAT makes the bot's push start the checks | `ANTHROPIC_API_KEY` only when using `fixer=claude` |
 
 This is the answer to the "scoped token" question: for read-only there is **no PAT
 to manage** — the workflow `permissions:` block is the whole scope. The PAT exists
 only for the live path, and is scoped to **`contents` + `issues` + `pull_requests`
-on the sandbox repo alone** — not your account.
+on the sandbox repo alone** — not your account. `AOM_CHECKS_TOKEN` is not a secret
+to create manually; the workflow maps the runner's scoped `github.token` to that
+environment variable for check-read access.
 
 ## One-time sandbox setup (live only)
 
@@ -32,6 +34,9 @@ Never run live against the real repo. Use a throwaway fork:
    Contents (RW), Issues (RW), Pull requests (RW). Store it:
    ```bash
    gh secret set AOM_BOT_TOKEN --repo <you>/<sandbox>
+   ```
+   If you will run the real Claude fixer (`-f fixer=claude`), also store:
+   ```bash
    gh secret set ANTHROPIC_API_KEY --repo <you>/<sandbox>
    ```
 

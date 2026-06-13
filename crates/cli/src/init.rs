@@ -368,8 +368,12 @@ pub fn print_checklist(config: &InitConfig) {
         println!("       set repository variable AOM_SANDBOX=true in Settings > Variables.");
         if config.autonomy_level != "L1" {
             println!("[ ] 5. Set repository secrets:");
-            println!("       - GITHUB_TOKEN (for git push, PR, merge)");
-            println!("       - ANTHROPIC_API_KEY (for Claude fixer, if using --fixer=claude)");
+            println!("       - AOM_BOT_TOKEN (fine-grained PAT for git push, PR, merge)");
+            println!("       - ANTHROPIC_API_KEY (only if using fixer=claude)");
+            println!(
+                "       Note: AOM_CHECKS_TOKEN is supplied by the workflow from github.token;"
+            );
+            println!("       do not create it as a repository secret.");
         }
     }
 

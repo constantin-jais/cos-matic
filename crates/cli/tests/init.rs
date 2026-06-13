@@ -388,6 +388,40 @@ fn init_prints_checklist_for_l1() {
 }
 
 #[test]
+fn init_l2_checklist_matches_workflow_credentials() {
+    let tmp = tempfile::tempdir().unwrap();
+    let output = Command::new(AOM)
+        .args([
+            "init",
+            "--name",
+            "l2-test",
+            "--level",
+            "L2",
+            "--adapter",
+            "universal",
+            "--yes",
+        ])
+        .current_dir(tmp.path())
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("AOM_BOT_TOKEN"),
+        "checklist should ask for the workflow's write-token secret"
+    );
+    assert!(
+        stdout.contains("AOM_CHECKS_TOKEN is supplied by the workflow"),
+        "checklist should explain the checks token is not a user-created secret"
+    );
+    assert!(
+        !stdout.contains("GITHUB_TOKEN (for git push"),
+        "checklist must not ask users to create the obsolete GITHUB_TOKEN secret"
+    );
+}
+
+#[test]
 fn init_with_repo_flag_includes_it() {
     let tmp = tempfile::tempdir().unwrap();
     let status = Command::new(AOM)
