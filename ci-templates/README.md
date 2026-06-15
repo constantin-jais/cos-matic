@@ -1,15 +1,15 @@
 # CI templates
 
-Drop-in CI that turns Agent-O-Matic's drift detection and goals into an enforced
+Drop-in CI that turns cos-matic's drift detection and goals into an enforced
 gate (ADR-0010).
 
-## `agent-o-matic.yml` (GitHub Actions)
+## `cos-matic.yml` (GitHub Actions)
 
-Copy it to `.github/workflows/agent-o-matic.yml`. It:
+Copy it to `.github/workflows/cos-matic.yml`. It:
 
 1. installs `aom`,
-2. runs `aom goals` (hard gates + observability report),
-3. runs `aom generate --check`, which fails if any committed output (`AGENTS.md`,
+2. runs `cosmatic goals` (hard gates + observability report),
+3. runs `cosmatic generate --check`, which fails if any committed output (`AGENTS.md`,
    `CLAUDE.md`, `.cursor/rules/*`, …) has drifted from `harness.toml` or a domain
    file.
 
@@ -22,6 +22,6 @@ timestamps — keep it gitignored.)
 The gate is just two commands — port them anywhere:
 
 ```sh
-aom goals            # nonzero exit if a hard gate fails
-aom generate --check # nonzero exit if outputs drifted from the source
+cosmatic goals            # nonzero exit if a hard gate fails
+cosmatic generate --check # nonzero exit if outputs drifted from the source
 ```

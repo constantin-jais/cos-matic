@@ -1,6 +1,6 @@
 # Core Values for {{name}}
 
-**Last revised by:** aom init
+**Last revised by:** cosmatic init
 
 ## Principles
 

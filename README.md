@@ -1,4 +1,4 @@
-# Agent-O-Matic
+# cos-matic
 
 A deterministic, agent-agnostic system for **trustworthy autonomous code-ops**:
 one declarative manifest compiles to many AI-agent configurations (safe-write,
@@ -8,7 +8,7 @@ under a reversible safety envelope **you** own.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Rust 1.95+](https://img.shields.io/badge/Rust-1.95%2B-orange.svg)](https://www.rust-lang.org)
-[![CI](https://github.com/constantin-jais/Agent-O-Matic/actions/workflows/ci.yml/badge.svg)](https://github.com/constantin-jais/Agent-O-Matic/actions/workflows/ci.yml)
+[![CI](https://github.com/constantin-jais/cos-matic/actions/workflows/ci.yml/badge.svg)](https://github.com/constantin-jais/cos-matic/actions/workflows/ci.yml)
 
 ## Ecosystem
 
@@ -18,23 +18,23 @@ graph TB
         RL["Presto-Matic · rumble-lm<br/>Collaborative Learning App"]
     end
     subgraph agentic["🤖 Agentic Tools"]
-        AOM["agent-o-matic<br/>Config Compiler + Orchestrator"]
-        DL["disc-loader<br/>Document Ingestion Worker"]
-        MC["memory-card<br/>Local Agent Context"]
+        cosmatic["cos-matic<br/>Config Compiler + Orchestrator"]
+        DL["wrench-loader<br/>Document Ingestion Worker"]
+        MC["gear-memory<br/>Local Agent Context"]
     end
     subgraph devops["🔧 DevOps Tools"]
-        LC["link-cable<br/>Distribution Substrate"]
-        SD["supply-depot<br/>Registry Proxy / Cache"]
+        LC["gear-cable<br/>Distribution Substrate"]
+        SD["gear-depot<br/>Registry Proxy / Cache"]
         VI["vault-inspector<br/>Postgres Security Audit"]
     end
-    RL --> DL
-    RL --> MC
+    RL --> WL
+    RL --> GM
     RL --> VI
-    RL --> SD
-    RL --> LC
-    AOM --> LC
-    DL --> MC
-    style AOM fill:#dbeafe,stroke:#2563eb,stroke-width:2px
+    RL --> GD
+    RL --> GC
+    cosmatic --> LC
+    WL --> GM
+    style cosmatic fill:#dbeafe,stroke:#2563eb,stroke-width:2px
 ```
 
 **Status — `v0`: compiler proven, orchestrator live-tested.** Built as a
@@ -51,7 +51,7 @@ archive), and forkability are first-class_ — is set in
 
 You keep one source of truth: a `harness.toml` manifest declaring reusable
 instruction **domains**, **profiles** (named subsets), and **targets** (per-agent
-outputs); Markdown content lives in its own files. `aom generate` compiles that
+outputs); Markdown content lives in its own files. `cosmatic generate` compiles that
 source into each agent's native config — deterministically, with **safe-write**
 (it never clobbers your hand-edits) and **drift detection** (a CI gate that keeps
 outputs in sync with source).
@@ -95,8 +95,8 @@ incident (reported / detected)
   (stop at the first stage that does not advance; retry next iteration if the issue is still open)
 ```
 
-Each stage is independently callable (`aom incident open`, `aom dispatch --issue
-8`, …) and composes via `aom loop` into a full end-to-end run. The envelope —
+Each stage is independently callable (`cosmatic incident open`, `cosmatic dispatch --issue
+8`, …) and composes via `cosmatic loop` into a full end-to-end run. The envelope —
 kill-switch, scope-fence (repo allowlist), circuit-breaker, zero-PII audit,
 reversible by design — is binding at every link.
 
@@ -123,19 +123,19 @@ traits (`Fixer`, `Gate`, `Forge`, `Stages`); live runs validate the boundary.
 
 ```sh
 cargo build --release
-./target/release/aom init      # interactive wizard (or --help for non-interactive flags)
+./target/release/cosmatic init      # interactive wizard (or --help for non-interactive flags)
 ```
 
 For scripting / CI, use flags to skip prompts:
 
 ```sh
-aom init --name my-project --level L1 --adapter universal --adapter claude --yes
+cosmatic init --name my-project --level L1 --adapter universal --adapter claude --yes
 ```
 
 This scaffolds `harness.toml`, domains, and (for L1+) a GitHub workflow template. Then compile:
 
 ```sh
-aom generate --check           # verify the scaffold is valid
+cosmatic generate --check           # verify the scaffold is valid
 ```
 
 ---
@@ -143,7 +143,7 @@ aom generate --check           # verify the scaffold is valid
 ## Quick reference: L0 (config compilation)
 
 ```sh
-cargo build --release          # → target/release/aom
+cargo build --release          # → target/release/cosmatic
 ```
 
 ```toml
@@ -169,22 +169,22 @@ profile = "default"
 ```
 
 ```sh
-aom generate           # compile the source into each target's native config
-aom generate --check   # CI gate: non-zero exit if any output drifted from source
-aom generate --force   # overwrite even outputs you hand-edited since the last write
+cosmatic generate           # compile the source into each target's native config
+cosmatic generate --check   # CI gate: non-zero exit if any output drifted from source
+cosmatic generate --force   # overwrite even outputs you hand-edited since the last write
 ```
 
 `-m, --manifest <path>` points at a manifest other than `./harness.toml`.
 
 **Hand-edit without fear.** After generation, edit the output (e.g. `AGENTS.md`)
-freely. The next `aom generate` will not overwrite diverged content (it refuses
+freely. The next `cosmatic generate` will not overwrite diverged content (it refuses
 with a clear message unless you pass `--force`), records what it wrote in
 `.harness/lock.toml` (committed; never hand-edited), and stays deterministic.
 
 ```sh
-aom library list           # built-in domains
-aom library show <name>    # a domain's content
-aom goals -m harness.toml  # evaluate declared goals (hard-gate vs observability)
+cosmatic library list           # built-in domains
+cosmatic library show <name>    # a domain's content
+cosmatic goals -m harness.toml  # evaluate declared goals (hard-gate vs observability)
 ```
 
 ## Dependency audit
@@ -205,7 +205,7 @@ Remove or re-justify those exceptions before declaring a final stable release.
 
 ```
 harness.toml + domains/*.md            (one source of truth)
-   │  aom generate
+   │  cosmatic generate
    ▼
 parse → resolve → ir → merge(priority) → render → safe-write → audit
                                           ▲
@@ -224,7 +224,7 @@ builtins, ADR-0008).
 ```
 ┌──────────────────────────────────────────────────────────┐
 │ Safety envelope (binding from L1 onward)                  │
-│  • Kill-switch (AOM_*_DISABLED)   • Scope-fence (allowlist)│
+│  • Kill-switch (cosmatic_*_DISABLED)   • Scope-fence (allowlist)│
 │  • Circuit-breaker (max attempts/merges/iterations)       │
 │  • Zero-PII audit (JSONL)         • Reversible by design   │
 └──────────────────────────────────────────────────────────┘
@@ -235,7 +235,7 @@ builtins, ADR-0008).
 
 Each stage implements the `Stages` trait, so the loop logic is proven offline via
 `FakeStages`; only the live boundary (`RealStages`, the GitHub forge, the fixer,
-`gh`/git) touches the network. `aom loop` short-circuits at the first stage that
+`gh`/git) touches the network. `cosmatic loop` short-circuits at the first stage that
 does not advance — no fix branch → stop; gate not green → stop; smoke failed →
 auto-rollback and stop (ADR-0017).
 
@@ -268,14 +268,14 @@ account-level risk (ADR-0019).
 | **Diagnostics**            | `miette`                                                               | Rich, pointed errors from day one — errors should teach. (ADR-0005)                                                                                                                                                                     |
 | **Config & policy**        | `serde` + `toml`                                                       | A typed manifest _and_ typed policy — declarative, auditable, no separate rule engine. (ADR-0026)                                                                                                                                       |
 | **CLI**                    | `clap`                                                                 | Standard derive-macro CLI.                                                                                                                                                                                                              |
-| **Wizard prompts**         | `inquire`                                                              | TUI prompts for the `aom init` onboarding wizard (L0–L3 presets, non-interactive mode for CI). (ADR-0028)                                                                                                                               |
+| **Wizard prompts**         | `inquire`                                                              | TUI prompts for the `cosmatic init` onboarding wizard (L0–L3 presets, non-interactive mode for CI). (ADR-0028)                                                                                                                               |
 | **Content integrity**      | `blake3`                                                               | Fast content fingerprints for the lockfile (drift detection) and incident idempotency.                                                                                                                                                  |
 | **Forge seam**             | `Forge` trait (`GithubForge`, `FakeForge`)                             | GitHub-first; designed so GitLab/Gitea are additive impls (design-for-multi-forge, implement-GitHub-only). (ADR-0026 §1, §6)                                                                                                            |
 | **Fixer isolation**        | `Fixer` trait → `FixerRuntime` (target)                                | Today: headless Claude with an allow-list (`Edit Write Read Grep Glob Bash(cargo *)`), in an ephemeral runner. Target: gVisor (V1) → Firecracker microVM. (ADR-0023, ADR-0026 §2)                                                       |
 | **Policy**                 | Typed TOML (`[autonomy]`, `[policy]`)                                  | Declarative, versionable, auditable. No OPA/Rego — a rule engine is overkill here. (ADR-0026 §3)                                                                                                                                        |
 | **Durability (future)**    | SQLite run-state                                                       | Proto: the zero-PII JSONL audit. Target: a SQLite run-ledger for resume + replay. **Not** Temporal — an external service fights the self-hostable ethos. (ADR-0026 §4)                                                                  |
-| **Portability core**       | pure `compile()` seam; `aom-core` target                               | Today, `agent_o_matic::generate::compile()` is I/O-free and returns `Vec<RenderedFile>`; ADR-0029 targets extracting that seam into a standalone `aom-core` for WASM/FFI bindings.                                                      |
-| **Distribution substrate** | [Link Cable](https://github.com/constantin-jais/link-cable) (external) | Rust-first release/distribution substrate extracted from the AOM doctrine: manifests, artifact plans, forward-only publish semantics, and `compensate`, never rollback. (ADR-0030)                                                      |
+| **Portability core**       | pure `compile()` seam; `aom-core` target                               | Today, `cos_matic::generate::compile()` is I/O-free and returns `Vec<RenderedFile>`; ADR-0029 targets extracting that seam into a standalone `aom-core` for WASM/FFI bindings.                                                      |
+| **Distribution substrate** | [Link Cable](https://github.com/constantin-jais/gear-cable) (external) | Rust-first release/distribution substrate extracted from the cosmatic doctrine: manifests, artifact plans, forward-only publish semantics, and `compensate`, never rollback. (ADR-0030)                                                      |
 | **Supply-chain**           | Link Cable policy + sigstore/cosign keyless, SLSA, SBOM (target)       | Keyless/OIDC publishing — no long-lived secret; a store-free sovereign floor per platform as a CI gate. (ADR-0031)                                                                                                                      |
 | **Native UI**              | truly-native per platform (target)                                     | SwiftUI/Compose/WinUI/GTK over one Rust core; N native UIs ≠ N logic impls. (ADR-0032)                                                                                                                                                  |
 
@@ -370,7 +370,7 @@ cargo build --release
 cargo test --workspace                                  # offline; no live GitHub calls
 cargo clippy --workspace --all-targets -- -D warnings   # zero-warning gate
 cargo fmt --all --check
-./target/release/aom generate --check --manifest examples/minimal/harness.toml  # dogfoods the compiler on this repo
+./target/release/cosmatic generate --check --manifest examples/minimal/harness.toml  # dogfoods the compiler on this repo
 ```
 
 ## Contributing

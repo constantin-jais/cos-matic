@@ -72,7 +72,7 @@ and O(N) there; testing frequency does not change that exponent.
 
 ### The dogfood argument
 
-Agent-O-Matic exists to eliminate one anti-pattern: _"one source of truth,
+cos-matic exists to eliminate one anti-pattern: _"one source of truth,
 compiled to many targets — never hand-maintain the N outputs."_ Reimplementing
 the tool itself N times in native languages would apply that very anti-pattern
 to the tool. The architecture must eat its own dogfood: the Rust core is the

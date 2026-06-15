@@ -1,4 +1,4 @@
-//! CLI-level tests: exercise the actual `aom` binary and assert exit codes (the
+//! CLI-level tests: exercise the actual `cosmatic` binary and assert exit codes (the
 //! contract a CI pipeline depends on). The library tests cover behavior; these
 //! cover the process boundary.
 
@@ -6,8 +6,8 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-fn aom() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_aom"))
+fn cosmatic() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_cosmatic"))
 }
 
 /// A project whose `orphan` domain is unused, with a `no-dead-domains` goal of
@@ -47,7 +47,7 @@ fn goals_command_exits_zero_when_nothing_blocks() {
     let tmp = tempfile::tempdir().unwrap();
     // observability never blocks, even though `orphan` is dead.
     write_project(tmp.path(), "observability");
-    let status = aom()
+    let status = cosmatic()
         .args(["goals", "--manifest"])
         .arg(tmp.path().join("harness.toml"))
         .status()
@@ -59,7 +59,7 @@ fn goals_command_exits_zero_when_nothing_blocks() {
 fn goals_command_exits_nonzero_on_hard_gate_failure() {
     let tmp = tempfile::tempdir().unwrap();
     write_project(tmp.path(), "hard_gate");
-    let status = aom()
+    let status = cosmatic()
         .args(["goals", "--manifest"])
         .arg(tmp.path().join("harness.toml"))
         .status()
@@ -71,7 +71,7 @@ fn goals_command_exits_nonzero_on_hard_gate_failure() {
 fn generate_exits_nonzero_and_writes_nothing_on_hard_gate_failure() {
     let tmp = tempfile::tempdir().unwrap();
     write_project(tmp.path(), "hard_gate");
-    let status = aom()
+    let status = cosmatic()
         .args(["generate", "--manifest"])
         .arg(tmp.path().join("harness.toml"))
         .status()

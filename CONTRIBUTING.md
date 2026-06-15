@@ -1,4 +1,4 @@
-# Contributing to Agent-O-Matic
+# Contributing to cos-matic
 
 This is a learning-first, clean-room project. The _reasoning_ is part of the
 artifact: the goal is that anyone can read the repo and understand not just

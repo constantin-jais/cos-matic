@@ -1,4 +1,4 @@
-//! Interactive setup wizard for Agent-O-Matic projects (`aom init`).
+//! Interactive setup wizard for cos-matic projects (`cosmatic init`).
 //!
 //! Scaffolds a new project with optional L0–L3 levels, adapters, and safe-write
 //! handling (never clobbers existing files).
@@ -361,17 +361,17 @@ pub fn print_checklist(config: &InitConfig) {
 
     println!("[ ] 1. Commit and push this scaffold to your repository.");
     println!("[ ] 2. Review the generated harness.toml and domains/.");
-    println!("[ ] 3. Run: aom generate --check");
+    println!("[ ] 3. Run: cosmatic generate --check");
 
     if config.autonomy_level != "L0" {
         println!("[ ] 4. If this is a sandbox repo (not your real repo),");
-        println!("       set repository variable AOM_SANDBOX=true in Settings > Variables.");
+        println!("       set repository variable cosmatic_SANDBOX=true in Settings > Variables.");
         if config.autonomy_level != "L1" {
             println!("[ ] 5. Set repository secrets:");
-            println!("       - AOM_BOT_TOKEN (fine-grained PAT for git push, PR, merge)");
+            println!("       - cosmatic_BOT_TOKEN (fine-grained PAT for git push, PR, merge)");
             println!("       - ANTHROPIC_API_KEY (only if using fixer=claude)");
             println!(
-                "       Note: AOM_CHECKS_TOKEN is supplied by the workflow from github.token;"
+                "       Note: cosmatic_CHECKS_TOKEN is supplied by the workflow from github.token;"
             );
             println!("       do not create it as a repository secret.");
         }

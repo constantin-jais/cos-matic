@@ -291,7 +291,7 @@ fn git_stdout(root: &Path, args: &[&str]) -> Result<String, FixerError> {
 /// trivial, safe change and commits it, so a real branch flows through
 /// publish -> gate -> merge -> deploy. Used to validate the loop's plumbing on a
 /// sandbox before (or without) wiring the real `ClaudeFixer`. Selected with
-/// `AOM_FIXER=stub` (ADR: stub-fixer-for-plumbing).
+/// `cosmatic_FIXER=stub` (ADR: stub-fixer-for-plumbing).
 pub struct StubFixer {
     pub repo_root: PathBuf,
 }

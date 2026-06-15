@@ -1,4 +1,4 @@
-//! The `aom` binary: parse args, dispatch to the compiler or the orchestrator.
+//! The `cosmatic` binary: parse args, dispatch to the compiler or the orchestrator.
 
 mod cli;
 mod init;
@@ -6,7 +6,7 @@ mod init;
 use clap::Parser;
 use miette::{IntoDiagnostic, miette};
 
-use agent_o_matic::generate;
+use cos_matic::generate;
 use cli::{Cli, Command, IncidentCommand, LibraryAction};
 use orchestrator::automerge::Gate;
 use orchestrator::forge::{self, GithubForge, RepoId};
@@ -51,19 +51,19 @@ fn main() -> miette::Result<()> {
         }
         Command::Library { action } => match action {
             LibraryAction::List => {
-                for (name, priority, description) in agent_o_matic::library::catalog() {
+                for (name, priority, description) in cos_matic::library::catalog() {
                     println!("{name:<20} (priority {priority:>3})  {description}");
                 }
                 Ok(())
             }
             LibraryAction::Show { name } => {
-                print!("{}", agent_o_matic::library::content(&name)?);
+                print!("{}", cos_matic::library::content(&name)?);
                 Ok(())
             }
         },
         Command::Goals { manifest } => {
             let (_root, manifest, tree) = generate::load_tree(&manifest)?;
-            let outcomes = agent_o_matic::goals::evaluate(&tree, &manifest.goals)?;
+            let outcomes = cos_matic::goals::evaluate(&tree, &manifest.goals)?;
             print_goals(&outcomes);
             let failures: Vec<String> = outcomes
                 .iter()
@@ -73,7 +73,7 @@ fn main() -> miette::Result<()> {
             if failures.is_empty() {
                 Ok(())
             } else {
-                Err(agent_o_matic::Error::GoalsFailed { failures }.into())
+                Err(cos_matic::Error::GoalsFailed { failures }.into())
             }
         }
         Command::Incident {
@@ -126,9 +126,9 @@ fn main() -> miette::Result<()> {
             repo,
         } => {
             let repo_id = resolve_repo(repo.as_deref())?;
-            // Kill-switch: set AOM_DISPATCH_DISABLED to refuse every dispatch.
+            // Kill-switch: set cosmatic_DISPATCH_DISABLED to refuse every dispatch.
             let env = dispatch::Envelope {
-                enabled: std::env::var_os("AOM_DISPATCH_DISABLED").is_none(),
+                enabled: std::env::var_os("cosmatic_DISPATCH_DISABLED").is_none(),
                 allowlist: vec![repo_id.clone()],
                 max_attempts: 1,
             };
@@ -139,8 +139,8 @@ fn main() -> miette::Result<()> {
                 repo: repo_id.clone(),
             };
             let repo_root = std::env::current_dir().into_diagnostic()?;
-            // AOM_FIXER=stub uses the deterministic no-LLM fixer (no Anthropic key).
-            let report = if std::env::var("AOM_FIXER").as_deref() == Ok("stub") {
+            // cosmatic_FIXER=stub uses the deterministic no-LLM fixer (no Anthropic key).
+            let report = if std::env::var("cosmatic_FIXER").as_deref() == Ok("stub") {
                 dispatch::dispatch(&dispatch::StubFixer { repo_root }, &env, &req)
             } else {
                 dispatch::dispatch(&dispatch::ClaudeFixer { repo_root }, &env, &req)
@@ -171,9 +171,9 @@ fn main() -> miette::Result<()> {
         }
         Command::Automerge { branch, repo } => {
             let repo_id = resolve_repo(repo.as_deref())?;
-            // Kill-switch: set AOM_AUTOMERGE_DISABLED to refuse every merge.
+            // Kill-switch: set cosmatic_AUTOMERGE_DISABLED to refuse every merge.
             let env = automerge::MergeEnvelope {
-                enabled: std::env::var_os("AOM_AUTOMERGE_DISABLED").is_none(),
+                enabled: std::env::var_os("cosmatic_AUTOMERGE_DISABLED").is_none(),
                 allowlist: vec![repo_id.clone()],
                 max_merges: 1,
             };
@@ -227,15 +227,15 @@ fn main() -> miette::Result<()> {
                     .map_err(|_| miette!("set {key} (the deploy is configured by command)"))
             };
             let deployer = deploy::CommandDeployer {
-                canary_cmd: cmd("AOM_DEPLOY_CANARY")?,
-                promote_cmd: cmd("AOM_DEPLOY_PROMOTE")?,
-                rollback_cmd: cmd("AOM_DEPLOY_ROLLBACK")?,
+                canary_cmd: cmd("cosmatic_DEPLOY_CANARY")?,
+                promote_cmd: cmd("cosmatic_DEPLOY_PROMOTE")?,
+                rollback_cmd: cmd("cosmatic_DEPLOY_ROLLBACK")?,
             };
             let smoke = deploy::CommandSmoke {
-                smoke_cmd: cmd("AOM_DEPLOY_SMOKE")?,
+                smoke_cmd: cmd("cosmatic_DEPLOY_SMOKE")?,
             };
             let env = deploy::DeployEnvelope {
-                enabled: std::env::var_os("AOM_DEPLOY_DISABLED").is_none(),
+                enabled: std::env::var_os("cosmatic_DEPLOY_DISABLED").is_none(),
                 allowlist: vec![repo_id.clone()],
                 max_deploys: 1,
             };
@@ -323,7 +323,7 @@ fn main() -> miette::Result<()> {
                 return Ok(());
             }
             let env = pipeline::LoopEnvelope {
-                enabled: std::env::var_os("AOM_LOOP_DISABLED").is_none(),
+                enabled: std::env::var_os("cosmatic_LOOP_DISABLED").is_none(),
                 allowlist: vec![repo_id.clone()],
                 max_iterations,
             };
@@ -334,10 +334,10 @@ fn main() -> miette::Result<()> {
                 repo: repo_id.clone(),
             };
             let repo_root = std::env::current_dir().into_diagnostic()?;
-            let deploy_canary = std::env::var("AOM_DEPLOY_CANARY").unwrap_or_default();
-            let deploy_promote = std::env::var("AOM_DEPLOY_PROMOTE").unwrap_or_default();
-            let deploy_rollback = std::env::var("AOM_DEPLOY_ROLLBACK").unwrap_or_default();
-            let deploy_smoke = std::env::var("AOM_DEPLOY_SMOKE").unwrap_or_default();
+            let deploy_canary = std::env::var("cosmatic_DEPLOY_CANARY").unwrap_or_default();
+            let deploy_promote = std::env::var("cosmatic_DEPLOY_PROMOTE").unwrap_or_default();
+            let deploy_rollback = std::env::var("cosmatic_DEPLOY_ROLLBACK").unwrap_or_default();
+            let deploy_smoke = std::env::var("cosmatic_DEPLOY_SMOKE").unwrap_or_default();
             // The loop core is async (the forge is); block on it once here — the
             // single async boundary — exactly as the incident command does. The
             // forge is built inside the runtime: octocrab's HTTP client needs a
@@ -387,8 +387,8 @@ fn main() -> miette::Result<()> {
 }
 
 /// Print one line per goal outcome, marking hard-gate failures.
-fn print_goals(outcomes: &[agent_o_matic::goals::GoalOutcome]) {
-    use agent_o_matic::config::schema::GoalKind;
+fn print_goals(outcomes: &[cos_matic::goals::GoalOutcome]) {
+    use cos_matic::config::schema::GoalKind;
     for o in outcomes {
         let kind = match o.kind {
             GoalKind::HardGate => "hard_gate",

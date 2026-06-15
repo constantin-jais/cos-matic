@@ -12,20 +12,20 @@ rolled back on failure**. A6 implements that step.
 
 ## Decision
 
-`aom deploy` runs canary -> smoke -> (promote | rollback), governed by the
+`cosmatic deploy` runs canary -> smoke -> (promote | rollback), governed by the
 cardinal rule and the binding envelope:
 
 - **Cardinal rule — a canary that fails (or cannot prove) smoke is always rolled
   back, never promoted.** Only a passing smoke promotes; a failing smoke and a
   smoke that errored both roll back (fail-closed).
-- **Envelope** — kill-switch (`AOM_DEPLOY_DISABLED`), scope-fence (a repo
+- **Envelope** — kill-switch (`cosmatic_DEPLOY_DISABLED`), scope-fence (a repo
   allowlist), rate-limit / circuit-breaker (max deploys per run).
 - **Reversible by construction** — rollback is part of the flow, not an
   afterthought; a bad deploy never stays up.
 - **Seams** — `Deployer` (canary/promote/rollback) and `Smoke` (probe) are
   traits, proven offline (pass->promote, fail->rollback, error->rollback, plus
   every envelope refusal). The real impls shell out to configured commands
-  (`AOM_DEPLOY_{CANARY,PROMOTE,ROLLBACK,SMOKE}`) — sovereign and portable; the
+  (`cosmatic_DEPLOY_{CANARY,PROMOTE,ROLLBACK,SMOKE}`) — sovereign and portable; the
   process/network is the live boundary.
 - **Zero-PII audit** — every deploy decision is journaled.
 

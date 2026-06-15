@@ -37,15 +37,15 @@ fi
 echo "== scaffolding sandbox: $SANDBOX =="
 
 # 1. Flag it as a sandbox — the workflow's live guard refuses without this.
-gh variable set AOM_SANDBOX --body true --repo "$SANDBOX"
-echo "  [ok] AOM_SANDBOX=true"
+gh variable set cosmatic_SANDBOX --body true --repo "$SANDBOX"
+echo "  [ok] cosmatic_SANDBOX=true"
 
 # 2. Verify the two secrets exist. Set by YOU — this script never sees a value.
 missing=0
 have_secret() {
   gh secret list --repo "$SANDBOX" --json name --jq '.[].name' 2>/dev/null | grep -qx "$1"
 }
-for s in AOM_BOT_TOKEN ANTHROPIC_API_KEY; do
+for s in cosmatic_BOT_TOKEN ANTHROPIC_API_KEY; do
   if have_secret "$s"; then
     echo "  [ok] secret $s present"
   else
@@ -54,7 +54,7 @@ for s in AOM_BOT_TOKEN ANTHROPIC_API_KEY; do
     missing=1
   fi
 done
-echo "       AOM_BOT_TOKEN = a fine-grained PAT scoped to contents+issues+pull_requests on $SANDBOX only."
+echo "       cosmatic_BOT_TOKEN = a fine-grained PAT scoped to contents+issues+pull_requests on $SANDBOX only."
 
 # 3. Preflight the workflow + Actions (forks disable both by default).
 if ! gh workflow view orchestrator-loop.yml --repo "$SANDBOX" >/dev/null 2>&1; then
@@ -72,7 +72,7 @@ fi
 
 # 4. A throwaway issue to drive the loop.
 issue_url="$(gh issue create --repo "$SANDBOX" --title "sandbox: live loop smoke" \
-  --body "Throwaway issue for an \`aom loop\` live run. Safe to close.")"
+  --body "Throwaway issue for an \`cosmatic loop\` live run. Safe to close.")"
 issue_num="${issue_url##*/}"
 echo "  [ok] issue #$issue_num created: $issue_url"
 
@@ -89,4 +89,4 @@ echo "  gh workflow run orchestrator-loop.yml --repo $SANDBOX -f issue=$issue_nu
 echo "  gh run watch --repo $SANDBOX"
 echo ""
 echo "When you're done, disarm the sandbox so it can never run live again by accident:"
-echo "  gh variable delete AOM_SANDBOX --repo $SANDBOX"
+echo "  gh variable delete cosmatic_SANDBOX --repo $SANDBOX"

@@ -1,4 +1,4 @@
-//! Command-line surface for the `aom` binary.
+//! Command-line surface for the `cosmatic` binary.
 
 use std::path::PathBuf;
 
@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "aom",
     version,
-    about = "Agent-O-Matic: compile one source into many AI-agent configs (safe-write, drift-aware)."
+    about = "cos-matic: compile one source into many AI-agent configs (safe-write, drift-aware)."
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -83,7 +83,7 @@ pub enum Command {
 
     /// Canary-deploy a target, smoke-test it, and promote or auto-rollback.
     Deploy {
-        /// Version/ref to deploy (exported to the deploy command as `AOM_TARGET`).
+        /// Version/ref to deploy (exported to the deploy command as `cosmatic_TARGET`).
         #[arg(long)]
         target: String,
 
@@ -121,7 +121,7 @@ pub enum Command {
         max_iterations: u32,
     },
 
-    /// Initialize a new Agent-O-Matic project (interactive setup wizard).
+    /// Initialize a new cos-matic project (interactive setup wizard).
     Init {
         /// Project name (skips prompt if provided).
         #[arg(long)]
@@ -152,7 +152,7 @@ pub enum LibraryAction {
 
     /// Print a built-in domain's content.
     Show {
-        /// Built-in name (see `aom library list`).
+        /// Built-in name (see `cosmatic library list`).
         name: String,
     },
 }

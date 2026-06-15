@@ -61,7 +61,7 @@ pub enum Error {
     #[error("unknown built-in `{name}`")]
     #[diagnostic(
         code(aom::unknown_builtin),
-        help("run `aom library list` to see the available built-ins")
+        help("run `cosmatic library list` to see the available built-ins")
     )]
     UnknownBuiltin { name: String },
 
@@ -192,7 +192,7 @@ pub enum Error {
 
     /// `--check` found one or more generated files out of date with the source.
     #[error("drift detected: {} file(s) out of date:\n{}", .paths.len(), .paths.join("\n"))]
-    #[diagnostic(code(aom::drift), help("run `aom generate` and commit the result"))]
+    #[diagnostic(code(aom::drift), help("run `cosmatic generate` and commit the result"))]
     Drift { paths: Vec<String> },
 }
 

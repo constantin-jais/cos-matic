@@ -32,13 +32,13 @@ user-defined domain colliding with a built-in name is still a real clash.
 ## Consequences
 
 - Adding a built-in = drop a `content/domains/<name>.md` and one registry row;
-  it is then available via both surfaces and listed by `aom library list`.
-- `aom library list` / `aom library show <name>` let users discover and read the
+  it is then available via both surfaces and listed by `cosmatic library list`.
+- `cosmatic library list` / `cosmatic library show <name>` let users discover and read the
   content without scaffolding anything.
 - Updating built-ins ships with a new binary release (acceptable; no remote
   registry — that would be premature, see ADR-0001's anti-adoption-race stance).
 - Seed set (neutral, English, migrated from the author's `~/.claude/`): the four
   decision axes, response blocks, factual style, agent behavior, code style,
   security baseline, TDD, anti-gold-plating.
-- `aom init` (scaffold a starter `harness.toml`) is a thin follow-up once the
+- `cosmatic init` (scaffold a starter `harness.toml`) is a thin follow-up once the
   library exists; not required for the library itself.

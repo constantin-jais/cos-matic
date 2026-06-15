@@ -1,14 +1,14 @@
-//! Integration tests for `aom init`.
+//! Integration tests for `cosmatic init`.
 
 use std::fs;
 use std::process::Command;
 
-const AOM: &str = env!("CARGO_BIN_EXE_aom");
+const COSMATIC: &str = env!("CARGO_BIN_EXE_cosmatic");
 
 #[test]
 fn init_noninteractive_l0_creates_minimal_scaffold() {
     let tmp = tempfile::tempdir().unwrap();
-    let status = Command::new(AOM)
+    let status = Command::new(COSMATIC)
         .args([
             "init",
             "--name",
@@ -23,7 +23,7 @@ fn init_noninteractive_l0_creates_minimal_scaffold() {
         .status()
         .unwrap();
 
-    assert!(status.success(), "aom init --yes should succeed");
+    assert!(status.success(), "cosmatic init --yes should succeed");
 
     // Assert files created.
     assert!(
@@ -62,7 +62,7 @@ fn init_noninteractive_l0_creates_minimal_scaffold() {
 #[test]
 fn init_noninteractive_l1_creates_workflow() {
     let tmp = tempfile::tempdir().unwrap();
-    let status = Command::new(AOM)
+    let status = Command::new(COSMATIC)
         .args([
             "init",
             "--name",
@@ -100,7 +100,7 @@ fn init_noninteractive_l1_creates_workflow() {
 #[test]
 fn init_noninteractive_l2_creates_workflow() {
     let tmp = tempfile::tempdir().unwrap();
-    Command::new(AOM)
+    Command::new(COSMATIC)
         .args([
             "init",
             "--name",
@@ -126,7 +126,7 @@ fn init_noninteractive_l2_creates_workflow() {
 #[test]
 fn init_noninteractive_l3_creates_workflow() {
     let tmp = tempfile::tempdir().unwrap();
-    Command::new(AOM)
+    Command::new(COSMATIC)
         .args([
             "init",
             "--name",
@@ -154,7 +154,7 @@ fn init_is_idempotent_does_not_clobber_on_second_run() {
     let tmp = tempfile::tempdir().unwrap();
 
     // First run.
-    let out1 = Command::new(AOM)
+    let out1 = Command::new(COSMATIC)
         .args([
             "init",
             "--name",
@@ -174,7 +174,7 @@ fn init_is_idempotent_does_not_clobber_on_second_run() {
     let original_content = fs::read_to_string(tmp.path().join("harness.toml")).unwrap();
 
     // Second run—should warn about existing files, not overwrite.
-    let out2 = Command::new(AOM)
+    let out2 = Command::new(COSMATIC)
         .args([
             "init",
             "--name",
@@ -201,7 +201,7 @@ fn init_is_idempotent_does_not_clobber_on_second_run() {
 #[test]
 fn init_errors_when_required_flags_missing_in_noninteractive_mode() {
     let tmp = tempfile::tempdir().unwrap();
-    let status = Command::new(AOM)
+    let status = Command::new(COSMATIC)
         .args(["init", "--yes"]) // No name, level, adapters.
         .current_dir(tmp.path())
         .status()
@@ -213,7 +213,7 @@ fn init_errors_when_required_flags_missing_in_noninteractive_mode() {
 #[test]
 fn init_validates_autonomy_level() {
     let tmp = tempfile::tempdir().unwrap();
-    let status = Command::new(AOM)
+    let status = Command::new(COSMATIC)
         .args([
             "init",
             "--name",
@@ -234,7 +234,7 @@ fn init_validates_autonomy_level() {
 #[test]
 fn init_validates_adapter_names() {
     let tmp = tempfile::tempdir().unwrap();
-    let status = Command::new(AOM)
+    let status = Command::new(COSMATIC)
         .args([
             "init",
             "--name",
@@ -255,7 +255,7 @@ fn init_validates_adapter_names() {
 #[test]
 fn init_defaults_level_and_adapter_in_noninteractive_mode() {
     let tmp = tempfile::tempdir().unwrap();
-    let status = Command::new(AOM)
+    let status = Command::new(COSMATIC)
         .args(["init", "--name", "defaults-test", "--yes"])
         .current_dir(tmp.path())
         .status()
@@ -277,7 +277,7 @@ fn init_defaults_level_and_adapter_in_noninteractive_mode() {
 #[test]
 fn init_multiple_adapters_creates_all_targets() {
     let tmp = tempfile::tempdir().unwrap();
-    let status = Command::new(AOM)
+    let status = Command::new(COSMATIC)
         .args([
             "init",
             "--name",
@@ -316,7 +316,7 @@ fn init_multiple_adapters_creates_all_targets() {
 #[test]
 fn init_creates_valid_harness_toml_that_aom_generate_accepts() {
     let tmp = tempfile::tempdir().unwrap();
-    let status = Command::new(AOM)
+    let status = Command::new(COSMATIC)
         .args([
             "init",
             "--name",
@@ -333,8 +333,8 @@ fn init_creates_valid_harness_toml_that_aom_generate_accepts() {
 
     assert!(status.success());
 
-    // Verify `aom generate` accepts and compiles the generated manifest.
-    let gen_status = Command::new(AOM)
+    // Verify `cosmatic generate` accepts and compiles the generated manifest.
+    let gen_status = Command::new(COSMATIC)
         .args(["generate"])
         .current_dir(tmp.path())
         .status()
@@ -342,11 +342,11 @@ fn init_creates_valid_harness_toml_that_aom_generate_accepts() {
 
     assert!(
         gen_status.success(),
-        "aom generate should succeed on init scaffold"
+        "cosmatic generate should succeed on init scaffold"
     );
 
     // Verify outputs are now up to date with `--check`.
-    let check_status = Command::new(AOM)
+    let check_status = Command::new(COSMATIC)
         .args(["generate", "--check"])
         .current_dir(tmp.path())
         .status()
@@ -354,14 +354,14 @@ fn init_creates_valid_harness_toml_that_aom_generate_accepts() {
 
     assert!(
         check_status.success(),
-        "generated manifest should be in sync after `aom generate`"
+        "generated manifest should be in sync after `cosmatic generate`"
     );
 }
 
 #[test]
 fn init_prints_checklist_for_l1() {
     let tmp = tempfile::tempdir().unwrap();
-    let output = Command::new(AOM)
+    let output = Command::new(COSMATIC)
         .args([
             "init",
             "--name",
@@ -390,7 +390,7 @@ fn init_prints_checklist_for_l1() {
 #[test]
 fn init_l2_checklist_matches_workflow_credentials() {
     let tmp = tempfile::tempdir().unwrap();
-    let output = Command::new(AOM)
+    let output = Command::new(COSMATIC)
         .args([
             "init",
             "--name",
@@ -408,11 +408,11 @@ fn init_l2_checklist_matches_workflow_credentials() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("AOM_BOT_TOKEN"),
+        stdout.contains("cosmatic_BOT_TOKEN"),
         "checklist should ask for the workflow's write-token secret"
     );
     assert!(
-        stdout.contains("AOM_CHECKS_TOKEN is supplied by the workflow"),
+        stdout.contains("cosmatic_CHECKS_TOKEN is supplied by the workflow"),
         "checklist should explain the checks token is not a user-created secret"
     );
     assert!(
@@ -428,7 +428,7 @@ fn init_l2_checklist_matches_workflow_credentials() {
 #[test]
 fn init_l3_checklist_allows_green_gate_bot_merge() {
     let tmp = tempfile::tempdir().unwrap();
-    let output = Command::new(AOM)
+    let output = Command::new(COSMATIC)
         .args([
             "init",
             "--name",
@@ -458,7 +458,7 @@ fn init_l3_checklist_allows_green_gate_bot_merge() {
 #[test]
 fn init_with_repo_flag_includes_it() {
     let tmp = tempfile::tempdir().unwrap();
-    let status = Command::new(AOM)
+    let status = Command::new(COSMATIC)
         .args([
             "init",
             "--name",
@@ -482,7 +482,7 @@ fn init_with_repo_flag_includes_it() {
 #[test]
 fn init_project_name_validation_rejects_invalid_chars() {
     let tmp = tempfile::tempdir().unwrap();
-    let status = Command::new(AOM)
+    let status = Command::new(COSMATIC)
         .args([
             "init",
             "--name",
@@ -506,7 +506,7 @@ fn init_project_name_validation_rejects_invalid_chars() {
 #[test]
 fn init_core_values_template_contains_project_name() {
     let tmp = tempfile::tempdir().unwrap();
-    Command::new(AOM)
+    Command::new(COSMATIC)
         .args([
             "init",
             "--name",

@@ -45,7 +45,7 @@ Check registry (Phase 4):
   lines (param `max`); without `max`, it just reports the metric.
 
 Semantics: a `hard_gate` whose check fails makes the run fail **before any file
-is written**. An `observability` goal is reported and never blocks. `aom goals`
+is written**. An `observability` goal is reported and never blocks. `cosmatic goals`
 evaluates and prints every outcome without writing (a CI gate surface); `aom
 generate` enforces the hard gates as part of compilation.
 

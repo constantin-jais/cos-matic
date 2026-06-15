@@ -29,7 +29,7 @@ stays a subprocess — it is VCS, not forge API.
 - **The 2-token model, as two clients.** The live debug proved a single token
   fails — a fine-grained PAT cannot read checks, a runner's `github.token` cannot
   open a PR (ADR: operate-loop-as-scoped-ci-bot). `GithubForge` now holds a write
-  `client` (PR list/create/merge) and a `checks_client` (`AOM_CHECKS_TOKEN`,
+  `client` (PR list/create/merge) and a `checks_client` (`cosmatic_CHECKS_TOKEN`,
   falling back to the write client) used only by `list_check_runs`. This replaces
   the old per-call `GH_TOKEN` env override.
 - **Async all the way, blocked once.** octocrab is async; the gate, merger, and
@@ -55,5 +55,5 @@ stays a subprocess — it is VCS, not forge API.
   (the `Fake` tests cannot exercise them). The change is gated on a live sandbox
   stub run, per the project's own thesis, before the consolidation is claimed
   done.
-- `Octocrab` is constructed twice when `AOM_CHECKS_TOKEN` is set — negligible, and
+- `Octocrab` is constructed twice when `cosmatic_CHECKS_TOKEN` is set — negligible, and
   the cost of honestly modelling two distinct token scopes.

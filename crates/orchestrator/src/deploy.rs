@@ -181,8 +181,8 @@ pub fn append_audit(
 }
 
 /// Real deployer: each step shells out to a configured command (sovereign and
-/// portable — a Clever Cloud canary, a script, whatever). `AOM_TARGET` and
-/// `AOM_CANARY` are exported to the commands. Subprocess, so it is exercised
+/// portable — a Clever Cloud canary, a script, whatever). `cosmatic_TARGET` and
+/// `cosmatic_CANARY` are exported to the commands. Subprocess, so it is exercised
 /// live, not in unit tests.
 pub struct CommandDeployer {
     pub canary_cmd: String,
@@ -192,17 +192,17 @@ pub struct CommandDeployer {
 
 impl Deployer for CommandDeployer {
     fn deploy_canary(&self, req: &DeployRequest) -> Result<Canary, DeployError> {
-        run(&self.canary_cmd, &[("AOM_TARGET", req.target.as_str())])?;
+        run(&self.canary_cmd, &[("cosmatic_TARGET", req.target.as_str())])?;
         Ok(Canary {
             id: req.target.clone(),
         })
     }
     fn promote(&self, canary: &Canary) -> Result<String, DeployError> {
-        run(&self.promote_cmd, &[("AOM_CANARY", canary.id.as_str())])?;
+        run(&self.promote_cmd, &[("cosmatic_CANARY", canary.id.as_str())])?;
         Ok(format!("promoted {}", canary.id))
     }
     fn rollback(&self, canary: &Canary) -> Result<(), DeployError> {
-        run(&self.rollback_cmd, &[("AOM_CANARY", canary.id.as_str())])
+        run(&self.rollback_cmd, &[("cosmatic_CANARY", canary.id.as_str())])
     }
 }
 
@@ -213,7 +213,7 @@ pub struct CommandSmoke {
 
 impl Smoke for CommandSmoke {
     fn check(&self, canary: &Canary) -> Result<SmokeResult, DeployError> {
-        match run(&self.smoke_cmd, &[("AOM_CANARY", canary.id.as_str())]) {
+        match run(&self.smoke_cmd, &[("cosmatic_CANARY", canary.id.as_str())]) {
             Ok(()) => Ok(SmokeResult::Pass),
             Err(e) => Ok(SmokeResult::Fail { reasons: vec![e.0] }),
         }

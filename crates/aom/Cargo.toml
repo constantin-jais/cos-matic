@@ -1,5 +1,5 @@
 [package]
-name = "agent-o-matic"
+name = "cos-matic"
 version = "0.0.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ keywords = ["ai", "agents", "codegen", "claude", "agents-md"]
 categories = ["command-line-utilities", "development-tools"]
 
 [lib]
-name = "agent_o_matic"
+name = "cos_matic"
 path = "src/lib.rs"
 
 [dependencies]

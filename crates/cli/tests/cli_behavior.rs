@@ -1,4 +1,4 @@
-//! Black-box behavioral tests on the `aom` binary itself.
+//! Black-box behavioral tests on the `cosmatic` binary itself.
 //!
 //! The library-level e2e tests in `crates/aom` exercise `generate::run`, but the
 //! binary's *observable output* — the per-file report, the graceful-degradation
@@ -10,9 +10,9 @@
 use std::fs;
 use std::process::Command;
 
-/// Path to the compiled `aom` binary, injected by Cargo for integration tests of
+/// Path to the compiled `cosmatic` binary, injected by Cargo for integration tests of
 /// the crate that defines the bin.
-const AOM: &str = env!("CARGO_BIN_EXE_aom");
+const COSMATIC: &str = env!("CARGO_BIN_EXE_cosmatic");
 
 fn repo_root() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -27,11 +27,11 @@ fn check_prints_files_up_to_date_message() {
     // file-count message. Pins the "N file(s) up to date" wording — a refactor
     // once reverted it to "target(s)".
     let example = repo_root().join("examples/minimal");
-    let out = Command::new(AOM)
+    let out = Command::new(COSMATIC)
         .args(["generate", "--check"])
         .current_dir(&example)
         .output()
-        .expect("spawn aom generate --check");
+        .expect("spawn cosmatic generate --check");
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -84,11 +84,11 @@ profile = "default"
     )
     .unwrap();
 
-    let out = Command::new(AOM)
+    let out = Command::new(COSMATIC)
         .arg("generate")
         .current_dir(root)
         .output()
-        .expect("spawn aom generate");
+        .expect("spawn cosmatic generate");
 
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -120,12 +120,12 @@ fn run_killed(
     extra_env: &[(&str, &str)],
 ) -> std::process::Output {
     let tmp = tempfile::tempdir().unwrap();
-    let mut c = Command::new(AOM);
+    let mut c = Command::new(COSMATIC);
     c.args(args).env(disable_var, "1").current_dir(tmp.path());
     for (k, v) in extra_env {
         c.env(k, v);
     }
-    c.output().expect("spawn aom")
+    c.output().expect("spawn cosmatic")
 }
 
 fn assert_refused(out: &std::process::Output, who: &str) {
@@ -145,7 +145,7 @@ fn assert_refused(out: &std::process::Output, who: &str) {
 fn dispatch_kill_switch_refuses_before_any_agent() {
     let out = run_killed(
         &["dispatch", "--issue", "1", "--title", "x", "--repo", "o/n"],
-        "AOM_DISPATCH_DISABLED",
+        "cosmatic_DISPATCH_DISABLED",
         &[],
     );
     assert_refused(&out, "dispatch");
@@ -158,7 +158,7 @@ fn automerge_kill_switch_refuses_before_any_merge() {
     // any API call.
     let out = run_killed(
         &["automerge", "--branch", "x", "--repo", "o/n"],
-        "AOM_AUTOMERGE_DISABLED",
+        "cosmatic_AUTOMERGE_DISABLED",
         &[("GITHUB_TOKEN", "ghp_test_dummy")],
     );
     assert_refused(&out, "automerge");
@@ -170,12 +170,12 @@ fn deploy_kill_switch_refuses_before_any_command() {
     // the kill-switch then refuses before any of them runs.
     let out = run_killed(
         &["deploy", "--target", "x", "--repo", "o/n"],
-        "AOM_DEPLOY_DISABLED",
+        "cosmatic_DEPLOY_DISABLED",
         &[
-            ("AOM_DEPLOY_CANARY", "true"),
-            ("AOM_DEPLOY_PROMOTE", "true"),
-            ("AOM_DEPLOY_ROLLBACK", "true"),
-            ("AOM_DEPLOY_SMOKE", "true"),
+            ("cosmatic_DEPLOY_CANARY", "true"),
+            ("cosmatic_DEPLOY_PROMOTE", "true"),
+            ("cosmatic_DEPLOY_ROLLBACK", "true"),
+            ("cosmatic_DEPLOY_SMOKE", "true"),
         ],
     );
     assert_refused(&out, "deploy");
@@ -188,7 +188,7 @@ fn loop_kill_switch_refuses_before_any_stage() {
     // any stage runs.
     let out = run_killed(
         &["loop", "--issue", "1", "--title", "x", "--repo", "o/n"],
-        "AOM_LOOP_DISABLED",
+        "cosmatic_LOOP_DISABLED",
         &[("GITHUB_TOKEN", "ghp_test_dummy")],
     );
     assert_refused(&out, "loop");

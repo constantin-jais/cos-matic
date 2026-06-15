@@ -13,12 +13,12 @@ that *modifies code*, so the charter's safety envelope
 
 ## Decision
 
-`aom dispatch` runs a single, hard-bounded attempt and stops at a proposed
+`cosmatic dispatch` runs a single, hard-bounded attempt and stops at a proposed
 branch. It never gates, merges, or deploys (that is A5).
 
 - **`Fixer` trait** — `ClaudeFixer` (real, headless Claude Code) + `FakeFixer`
   (tests). All envelope logic is proven offline.
-- **Envelope** — kill-switch (`AOM_DISPATCH_DISABLED`), scope-fence (a repo
+- **Envelope** — kill-switch (`cosmatic_DISPATCH_DISABLED`), scope-fence (a repo
   allowlist, defaulting to the target repo only), circuit-breaker (one attempt).
 - **Isolation** — the fixer works in a throwaway git worktree on a fresh branch
   off `HEAD`; it never pushes, never opens a PR, never touches `main`.

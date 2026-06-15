@@ -54,7 +54,7 @@ jobs:
           fetch-depth: 0
           # Use the bot PAT when present so the loop's `git push` triggers CI
           # (the built-in github.token does not); falls back to it for dry-run.
-          token: ${{ secrets.AOM_BOT_TOKEN || github.token }}
+          token: ${{ secrets.cosmatic_BOT_TOKEN || github.token }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build aom
@@ -66,39 +66,39 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
-          ./target/debug/aom loop --dry-run
+          ./target/debug/cosmatic loop --dry-run
           --issue "${{ inputs.issue }}"
           --title "ci: autonomous loop"
 
       # --- live: outward + irreversible. Fenced to an explicit sandbox repo. ---
       - name: Guard — live is sandbox-only
-        if: inputs.mode == 'live' && vars.AOM_SANDBOX != 'true'
+        if: inputs.mode == 'live' && vars.cosmatic_SANDBOX != 'true'
         run: |
-          echo "::error::live mode refused. Set repository variable AOM_SANDBOX=true to confirm this is a disposable sandbox (never the real repo)."
+          echo "::error::live mode refused. Set repository variable cosmatic_SANDBOX=true to confirm this is a disposable sandbox (never the real repo)."
           exit 1
       - name: Install Claude Code
-        if: inputs.mode == 'live' && vars.AOM_SANDBOX == 'true' && inputs.fixer == 'claude'
+        if: inputs.mode == 'live' && vars.cosmatic_SANDBOX == 'true' && inputs.fixer == 'claude'
         run: npm install -g @anthropic-ai/claude-code
       - name: Loop (live)
-        if: inputs.mode == 'live' && vars.AOM_SANDBOX == 'true'
+        if: inputs.mode == 'live' && vars.cosmatic_SANDBOX == 'true'
         env:
           # Two tokens, each at its minimal role. The PAT does the writes —
           # push (triggers CI, via the checkout token below), open the PR, merge —
           # because a user PAT is not subject to the "Actions may create/approve
           # PRs" repo restriction. The runner's github.token is handed to the gate
-          # alone (AOM_CHECKS_TOKEN) to *read* check status, so the PAT needs no
+          # alone (cosmatic_CHECKS_TOKEN) to *read* check status, so the PAT needs no
           # Checks scope and the repo needs no Actions-can-approve-PRs setting.
-          GITHUB_TOKEN: ${{ secrets.AOM_BOT_TOKEN }}
-          AOM_CHECKS_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.cosmatic_BOT_TOKEN }}
+          cosmatic_CHECKS_TOKEN: ${{ github.token }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # claude (real LLM) or stub (deterministic, no Anthropic key needed).
-          AOM_FIXER: ${{ inputs.fixer }}
+          cosmatic_FIXER: ${{ inputs.fixer }}
           # No-op deploy: exercise the wiring, never real infrastructure.
-          AOM_DEPLOY_CANARY: "true"
-          AOM_DEPLOY_PROMOTE: "true"
-          AOM_DEPLOY_ROLLBACK: "true"
-          AOM_DEPLOY_SMOKE: "true"
+          cosmatic_DEPLOY_CANARY: "true"
+          cosmatic_DEPLOY_PROMOTE: "true"
+          cosmatic_DEPLOY_ROLLBACK: "true"
+          cosmatic_DEPLOY_SMOKE: "true"
         run: >-
-          ./target/debug/aom loop
+          ./target/debug/cosmatic loop
           --issue "${{ inputs.issue }}"
           --title "ci: autonomous loop"

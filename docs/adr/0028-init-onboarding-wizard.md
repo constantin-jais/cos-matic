@@ -1,4 +1,4 @@
-# ADR-0028 — Interactive onboarding wizard (`aom init`)
+# ADR-0028 — Interactive onboarding wizard (`cosmatic init`)
 
 ## Status
 
@@ -12,7 +12,7 @@ The ADR hierarchy (ADR: north-star-trustworthy-autonomy) defines four autonomy l
 
 ## Decision
 
-Introduce `aom init`: an interactive Rust-native wizard that:
+Introduce `cosmatic init`: an interactive Rust-native wizard that:
 
 1. **Onboards users interactively** (or non-interactively via `--yes`).
    - Guides choice of project name, autonomy level, adapters, and GitHub repo.
@@ -27,7 +27,7 @@ Introduce `aom init`: an interactive Rust-native wizard that:
 
 3. **Prints a manual operator checklist** (L1/L2/L3).
    - Does not automate GitHub settings, repo vars, or CI permissions—user applies them manually.
-   - Checklist flags each setup step: commit scaffold, review manifest, run `aom generate --check`, set repo vars (L2/L3), configure branch protections, etc.
+   - Checklist flags each setup step: commit scaffold, review manifest, run `cosmatic generate --check`, set repo vars (L2/L3), configure branch protections, etc.
 
 4. **Respects safe-write invariant** (ADR: safe-write-sentinel-lockfile).
    - If `harness.toml`, workflows, or domains exist, warns and skips; never overwrites.
@@ -39,7 +39,7 @@ Introduce `aom init`: an interactive Rust-native wizard that:
 - **Wizard is local & portable:** no bootstrap server, no remote state—purely CLI. Users fork with their own scaffold defaults in `crates/cli/templates/`.
 - **Interactivity is optional:** `--yes` mode works in CI/scripting; TUI for humans. Both paths validate inputs identically.
 - **Autonomy level becomes concrete:** `[autonomy] level` is now a first-class field in every `harness.toml`, even if the orchestrator is deferred. Policy & audit (ADR: architecture-targets-seams-isolation-durability, §3) can read it at runtime.
-- **Safe-write is reinforced:** init is the first place users create artifacts; it must never corrupt existing projects. Same pattern as `aom generate --force`—safe-write is the default, force is opt-in (and forbidden here, as init always respects existing files).
+- **Safe-write is reinforced:** init is the first place users create artifacts; it must never corrupt existing projects. Same pattern as `cosmatic generate --force`—safe-write is the default, force is opt-in (and forbidden here, as init always respects existing files).
 - **Templates live alongside code:** Under `crates/cli/templates/`, version-controlled and forkable. Changes to the template are shipped with the binary via `include_str!`.
 
 ## Cross-references

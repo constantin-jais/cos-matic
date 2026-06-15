@@ -6,7 +6,7 @@ Accepted (2026-06-27).
 
 ## Context
 
-Agent-O-Matic began as a single crate: a clean-room, deterministic
+cos-matic began as a single crate: a clean-room, deterministic
 configuration compiler whose charter (ADR: positioning-and-why-build) scopes success to _learning in
 order to teach_ — not adoption — and names a remote content registry, "19
 targets on day one", and an early MCP server as gold-plating against that goal.
@@ -24,7 +24,7 @@ concern is orthogonal to "compile one source into many agent configs".
 Restructure the repository into a Cargo workspace rather than growing the
 compiler crate:
 
-- `crates/aom` — the compiler library `agent_o_matic`, **unchanged in spirit
+- `crates/aom` — the compiler library `cos_matic`, **unchanged in spirit
   and still governed by ADR: positioning-and-why-build**. It gains no orchestration, no MCP, no
   network dependency. It loses only its CLI wiring (moved out), which sharpens
   its identity as a pure library.
@@ -58,5 +58,5 @@ Autonomy is permitted only inside a hard, reversible envelope:
   depend on it without polluting it.
 - Profiles (`[profile.release]`) now live only in the workspace root, per Cargo.
 - A workspace dependency references a crate by its **package** name
-  (`agent-o-matic`), while Rust code imports it by its **library** name
-  (`agent_o_matic`); the two differ here and the manifests reflect that.
+  (`cos-matic`), while Rust code imports it by its **library** name
+  (`cos_matic`); the two differ here and the manifests reflect that.

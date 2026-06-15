@@ -4,8 +4,8 @@
 use std::fs;
 use std::path::Path;
 
-use agent_o_matic::Error;
-use agent_o_matic::generate::{self, Action, Options};
+use cos_matic::Error;
+use cos_matic::generate::{self, Action, Options};
 
 fn opts(manifest: &Path, check: bool, force: bool) -> Options {
     Options {

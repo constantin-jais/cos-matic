@@ -106,7 +106,7 @@ State evolves from ephemeral JSONL audit → a **SQLite-backed run-state**.
 
 The loop core (`run_until_done` over the `Stages` trait) has zero knowledge of
 CI (ADR: end-to-end-loop). The stages (dispatch → publish → automerge → deploy)
-compose with short-circuit logic proven offline via `FakeStages`; `aom loop`
+compose with short-circuit logic proven offline via `FakeStages`; `cosmatic loop`
 takes incident/repo/branch as CLI args, with no `github.event` parsing.
 
 **Decision (graven as a constraint):** the core must never leak "CI". That is
