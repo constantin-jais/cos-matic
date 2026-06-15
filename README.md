@@ -10,6 +10,33 @@ under a reversible safety envelope **you** own.
 [![Rust 1.95+](https://img.shields.io/badge/Rust-1.95%2B-orange.svg)](https://www.rust-lang.org)
 [![CI](https://github.com/constantin-jais/Agent-O-Matic/actions/workflows/ci.yml/badge.svg)](https://github.com/constantin-jais/Agent-O-Matic/actions/workflows/ci.yml)
 
+## Ecosystem
+
+```mermaid
+graph TB
+    subgraph product["🎯 Product"]
+        RL["Presto-Matic · rumble-lm<br/>Collaborative Learning App"]
+    end
+    subgraph agentic["🤖 Agentic Tools"]
+        AOM["agent-o-matic<br/>Config Compiler + Orchestrator"]
+        DL["disc-loader<br/>Document Ingestion Worker"]
+        MC["memory-card<br/>Local Agent Context"]
+    end
+    subgraph devops["🔧 DevOps Tools"]
+        LC["link-cable<br/>Distribution Substrate"]
+        SD["supply-depot<br/>Registry Proxy / Cache"]
+        VI["vault-inspector<br/>Postgres Security Audit"]
+    end
+    RL --> DL
+    RL --> MC
+    RL --> VI
+    RL --> SD
+    RL --> LC
+    AOM --> LC
+    DL --> MC
+    style AOM fill:#dbeafe,stroke:#2563eb,stroke-width:2px
+```
+
 **Status — `v0`: compiler proven, orchestrator live-tested.** Built as a
 clean-room learning artifact: every non-obvious decision is an ADR in
 [`docs/adr/`](docs/adr/), and tests are the executable spec. The north-star —
@@ -233,24 +260,24 @@ account-level risk (ADR-0019).
 
 ## Tech stack, with rationale
 
-| Component               | Choice                                       | Why                                                                                                                                                                                                                                     |
-| ----------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Language**            | Rust, edition 2024                           | Memory safety without a GC; a single self-contained binary (decisive for a tool meant to be forked + self-hosted); the type system enforces the safe-write state machine at compile time. (ADR-0002)                                    |
-| **Async runtime**       | `tokio` + `async-trait`                      | Required by `octocrab`. Confined to the forge boundary; the compiler stays synchronous.                                                                                                                                                 |
-| **GitHub API**          | `octocrab` (typed client)                    | Typed client for **all** GitHub ops — issues (ADR-0012) and, since ADR-0027, the orchestrator's gate/publish/merge. The `gh`-subprocess coupling that caused ~half the live-debug bugs is gone; `git push` is the only subprocess left. |
-| **Diagnostics**         | `miette`                                     | Rich, pointed errors from day one — errors should teach. (ADR-0005)                                                                                                                                                                     |
-| **Config & policy**     | `serde` + `toml`                             | A typed manifest _and_ typed policy — declarative, auditable, no separate rule engine. (ADR-0026)                                                                                                                                       |
-| **CLI**                 | `clap`                                       | Standard derive-macro CLI.                                                                                                                                                                                                              |
-| **Wizard prompts**      | `inquire`                                    | TUI prompts for the `aom init` onboarding wizard (L0–L3 presets, non-interactive mode for CI). (ADR-0028)                                                                                                                               |
-| **Content integrity**   | `blake3`                                     | Fast content fingerprints for the lockfile (drift detection) and incident idempotency.                                                                                                                                                  |
-| **Forge seam**          | `Forge` trait (`GithubForge`, `FakeForge`)   | GitHub-first; designed so GitLab/Gitea are additive impls (design-for-multi-forge, implement-GitHub-only). (ADR-0026 §1, §6)                                                                                                            |
-| **Fixer isolation**     | `Fixer` trait → `FixerRuntime` (target)      | Today: headless Claude with an allow-list (`Edit Write Read Grep Glob Bash(cargo *)`), in an ephemeral runner. Target: gVisor (V1) → Firecracker microVM. (ADR-0023, ADR-0026 §2)                                                       |
-| **Policy**              | Typed TOML (`[autonomy]`, `[policy]`)        | Declarative, versionable, auditable. No OPA/Rego — a rule engine is overkill here. (ADR-0026 §3)                                                                                                                                        |
-| **Durability (future)** | SQLite run-state                             | Proto: the zero-PII JSONL audit. Target: a SQLite run-ledger for resume + replay. **Not** Temporal — an external service fights the self-hostable ethos. (ADR-0026 §4)                                                                  |
-| **Portability core**    | pure `compile()` seam; `aom-core` target     | Today, `agent_o_matic::generate::compile()` is I/O-free and returns `Vec<RenderedFile>`; ADR-0029 targets extracting that seam into a standalone `aom-core` for WASM/FFI bindings.                                                       |
-| **Distribution substrate** | [Link Cable](https://github.com/constantin-jais/link-cable) (external) | Rust-first release/distribution substrate extracted from the AOM doctrine: manifests, artifact plans, forward-only publish semantics, and `compensate`, never rollback. (ADR-0030)                                                       |
-| **Supply-chain**        | Link Cable policy + sigstore/cosign keyless, SLSA, SBOM (target) | Keyless/OIDC publishing — no long-lived secret; a store-free sovereign floor per platform as a CI gate. (ADR-0031)                                                                                                                      |
-| **Native UI**           | truly-native per platform (target)           | SwiftUI/Compose/WinUI/GTK over one Rust core; N native UIs ≠ N logic impls. (ADR-0032)                                                                                                                                                  |
+| Component                  | Choice                                                                 | Why                                                                                                                                                                                                                                     |
+| -------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Language**               | Rust, edition 2024                                                     | Memory safety without a GC; a single self-contained binary (decisive for a tool meant to be forked + self-hosted); the type system enforces the safe-write state machine at compile time. (ADR-0002)                                    |
+| **Async runtime**          | `tokio` + `async-trait`                                                | Required by `octocrab`. Confined to the forge boundary; the compiler stays synchronous.                                                                                                                                                 |
+| **GitHub API**             | `octocrab` (typed client)                                              | Typed client for **all** GitHub ops — issues (ADR-0012) and, since ADR-0027, the orchestrator's gate/publish/merge. The `gh`-subprocess coupling that caused ~half the live-debug bugs is gone; `git push` is the only subprocess left. |
+| **Diagnostics**            | `miette`                                                               | Rich, pointed errors from day one — errors should teach. (ADR-0005)                                                                                                                                                                     |
+| **Config & policy**        | `serde` + `toml`                                                       | A typed manifest _and_ typed policy — declarative, auditable, no separate rule engine. (ADR-0026)                                                                                                                                       |
+| **CLI**                    | `clap`                                                                 | Standard derive-macro CLI.                                                                                                                                                                                                              |
+| **Wizard prompts**         | `inquire`                                                              | TUI prompts for the `aom init` onboarding wizard (L0–L3 presets, non-interactive mode for CI). (ADR-0028)                                                                                                                               |
+| **Content integrity**      | `blake3`                                                               | Fast content fingerprints for the lockfile (drift detection) and incident idempotency.                                                                                                                                                  |
+| **Forge seam**             | `Forge` trait (`GithubForge`, `FakeForge`)                             | GitHub-first; designed so GitLab/Gitea are additive impls (design-for-multi-forge, implement-GitHub-only). (ADR-0026 §1, §6)                                                                                                            |
+| **Fixer isolation**        | `Fixer` trait → `FixerRuntime` (target)                                | Today: headless Claude with an allow-list (`Edit Write Read Grep Glob Bash(cargo *)`), in an ephemeral runner. Target: gVisor (V1) → Firecracker microVM. (ADR-0023, ADR-0026 §2)                                                       |
+| **Policy**                 | Typed TOML (`[autonomy]`, `[policy]`)                                  | Declarative, versionable, auditable. No OPA/Rego — a rule engine is overkill here. (ADR-0026 §3)                                                                                                                                        |
+| **Durability (future)**    | SQLite run-state                                                       | Proto: the zero-PII JSONL audit. Target: a SQLite run-ledger for resume + replay. **Not** Temporal — an external service fights the self-hostable ethos. (ADR-0026 §4)                                                                  |
+| **Portability core**       | pure `compile()` seam; `aom-core` target                               | Today, `agent_o_matic::generate::compile()` is I/O-free and returns `Vec<RenderedFile>`; ADR-0029 targets extracting that seam into a standalone `aom-core` for WASM/FFI bindings.                                                      |
+| **Distribution substrate** | [Link Cable](https://github.com/constantin-jais/link-cable) (external) | Rust-first release/distribution substrate extracted from the AOM doctrine: manifests, artifact plans, forward-only publish semantics, and `compensate`, never rollback. (ADR-0030)                                                      |
+| **Supply-chain**           | Link Cable policy + sigstore/cosign keyless, SLSA, SBOM (target)       | Keyless/OIDC publishing — no long-lived secret; a store-free sovereign floor per platform as a CI gate. (ADR-0031)                                                                                                                      |
+| **Native UI**              | truly-native per platform (target)                                     | SwiftUI/Compose/WinUI/GTK over one Rust core; N native UIs ≠ N logic impls. (ADR-0032)                                                                                                                                                  |
 
 **Why Rust over Go/TS:** the type system lets the compiler enforce the safe-write
 state machine and the determinism guarantees at compile time, and a single
