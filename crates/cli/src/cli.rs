@@ -175,6 +175,10 @@ pub enum HandoffAction {
     Validate {
         /// Path to the handoff JSON payload.
         payload: PathBuf,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
     },
 
     /// Produce a planning-only dry-run report from a valid handoff payload.
@@ -185,6 +189,10 @@ pub enum HandoffAction {
         /// Required safety flag: planning only, no implementation execution.
         #[arg(long)]
         dry_run: bool,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
     },
 }
 

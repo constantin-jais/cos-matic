@@ -114,6 +114,53 @@ profile = "default"
 // resolution, and the kill-switch short-circuits ahead of every side effect. They
 // cover the orchestrator arms of `main.rs`, which no library test reaches.
 
+#[test]
+fn handoff_validate_json_reports_valid_payload() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    fs::write(
+        &payload,
+        r#"{
+          "format":"canvas.bolt_handoff.v0.1",
+          "kind":"planning_request",
+          "source":{"product":"rumble-canvas","workspace_id":"w","handoff_id":"h","created_by":"a","created_at":"2026-06-30T00:00:00Z"},
+          "package":{"package_id":"p","version":"0.1.0","package_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000","items":[{"section_id":"s","revision_id":"r"}]},
+          "planning_scope":{"mode":"full_package","target_objects":[],"excluded_objects":[],"goal":"Plan only"},
+          "spec_context":{},
+          "traceability_links":[{"source_type":"journey","source_id":"j","target_type":"action","target_id":"a","relation_type":"implements"}],
+          "active_waivers":[],"open_questions":[],"risks":[],"capability_candidates":[],
+          "constraints":{"sovereignty":"self-hostable","data_residency":"EU","non_goals":[]},
+          "requested_outputs":["implementation_plan"],
+          "execution_policy":{"planning_only":true,"allow_execution":false,"requires_human_approval_for_execution":true}
+        }"#,
+    )
+    .unwrap();
+
+    let out = Command::new(COSMATIC)
+        .args(["handoff", "validate", payload.to_str().unwrap(), "--json"])
+        .output()
+        .expect("spawn cosmatic handoff validate --json");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "stdout:\n{stdout}\nstderr:\n{stderr}");
+    assert!(
+        stdout.contains("\"handoff_id\": \"h\""),
+        "stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn handoff_plan_requires_dry_run() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    fs::write(&payload, "{}").unwrap();
+    let out = Command::new(COSMATIC)
+        .args(["handoff", "plan", payload.to_str().unwrap()])
+        .output()
+        .expect("spawn cosmatic handoff plan");
+    assert!(!out.status.success(), "plan without --dry-run must fail");
+}
+
 fn run_killed(
     args: &[&str],
     disable_var: &str,

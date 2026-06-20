@@ -8,6 +8,7 @@
 use std::fs;
 use std::path::Path;
 
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::error::{Error, Result};
@@ -15,7 +16,8 @@ use crate::error::{Error, Result};
 const SUPPORTED_FORMAT: &str = "canvas.bolt_handoff.v0.1";
 const SUPPORTED_KIND: &str = "planning_request";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FindingSeverity {
     Error,
     Warning,
@@ -30,14 +32,14 @@ impl FindingSeverity {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HandoffFinding {
     pub severity: FindingSeverity,
     pub code: &'static str,
     pub message: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HandoffReport {
     pub format: Option<String>,
     pub kind: Option<String>,
@@ -58,11 +60,26 @@ impl HandoffReport {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DryRunPlan {
     pub report: HandoffReport,
-    pub gates: Vec<String>,
-    pub tasks: Vec<String>,
+    pub gates: Vec<PlanGate>,
+    pub tasks: Vec<PlanTask>,
+    pub next_actions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PlanGate {
+    pub code: String,
+    pub status: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PlanTask {
+    pub title: String,
+    pub source_trace: Vec<String>,
+    pub acceptance: Vec<String>,
 }
 
 pub fn validate_file(path: &Path) -> Result<HandoffReport> {
@@ -83,37 +100,92 @@ pub fn validate_str(source: &str) -> Result<HandoffReport> {
 pub fn dry_run_plan_file(path: &Path) -> Result<DryRunPlan> {
     let report = validate_file(path)?;
     let mut gates = vec![
-        "package_approved".to_string(),
-        "planning_only_enforced".to_string(),
-        "traceability_present".to_string(),
-        "blocking_questions_waived_or_absent".to_string(),
-        "high_risks_waived_or_absent".to_string(),
-        "shared_capability_review_requested".to_string(),
+        gate(
+            "package_approved",
+            "pass",
+            "package metadata and items are present",
+        ),
+        gate(
+            "planning_only_enforced",
+            "pass",
+            "execution is explicitly forbidden",
+        ),
+        gate(
+            "traceability_present",
+            "pass",
+            "traceability links are present",
+        ),
+        gate(
+            "blocking_questions_waived_or_absent",
+            "pass",
+            "no unwaived blocking question detected",
+        ),
+        gate(
+            "high_risks_waived_or_absent",
+            "pass",
+            "no unwaived high/critical risk detected",
+        ),
+        gate(
+            "shared_capability_review_requested",
+            "pass",
+            "shared capability extraction review can be produced",
+        ),
     ];
     let mut tasks = Vec::new();
+    let mut next_actions = Vec::new();
 
     if report.is_valid() {
         for output in &report.requested_outputs {
-            match output.as_str() {
-                "implementation_plan" => tasks.push("draft implementation plan".to_string()),
-                "task_breakdown" => tasks.push("derive task breakdown".to_string()),
-                "risk_review" => tasks.push("review risks and waivers".to_string()),
-                "test_plan" => tasks.push("derive acceptance and contract test plan".to_string()),
-                "shared_capability_extraction_review" => {
-                    tasks.push("review shared capability extraction".to_string())
-                }
-                other => tasks.push(format!("produce requested output `{other}`")),
-            }
+            tasks.push(task_for_output(output));
         }
+        next_actions.push("review dry-run plan with a human owner".to_string());
+        next_actions.push("run Wrench inspections before any execution approval".to_string());
     } else {
-        gates.push("refuse_until_validation_clean".to_string());
+        gates.push(gate(
+            "refuse_until_validation_clean",
+            "fail",
+            "handoff has blocking validation errors",
+        ));
+        next_actions.push("fix validation findings and resubmit handoff".to_string());
     }
 
     Ok(DryRunPlan {
         report,
         gates,
         tasks,
+        next_actions,
     })
+}
+
+fn gate(code: &str, status: &str, detail: &str) -> PlanGate {
+    PlanGate {
+        code: code.to_string(),
+        status: status.to_string(),
+        detail: detail.to_string(),
+    }
+}
+
+fn task_for_output(output: &str) -> PlanTask {
+    let title = match output {
+        "implementation_plan" => "Draft implementation plan",
+        "task_breakdown" => "Derive task breakdown",
+        "risk_review" => "Review risks and waivers",
+        "test_plan" => "Derive acceptance and contract test plan",
+        "shared_capability_extraction_review" => "Review shared capability extraction",
+        other => {
+            return PlanTask {
+                title: format!("Produce requested output `{other}`"),
+                source_trace: Vec::new(),
+                acceptance: vec![format!("Output `{other}` is present in the dry-run report")],
+            };
+        }
+    };
+
+    PlanTask {
+        title: title.to_string(),
+        source_trace: Vec::new(),
+        acceptance: vec![format!("{title} is produced without execution")],
+    }
 }
 
 fn validate_payload(payload: &Value) -> HandoffReport {
@@ -215,6 +287,7 @@ fn validate_payload(payload: &Value) -> HandoffReport {
         &["traceability_links"],
         "missing_traceability_links",
     );
+    validate_waivers(payload, &mut findings);
     validate_blockers(payload, &mut findings);
     validate_risks(payload, &mut findings);
     validate_capability_candidates(payload, &mut findings);
@@ -284,6 +357,19 @@ fn validate_package_hash(findings: &mut Vec<HandoffFinding>, hash: Option<&str>)
             "missing_package_hash",
             "package.package_hash is required".to_string(),
         )),
+    }
+}
+
+fn validate_waivers(payload: &Value, findings: &mut Vec<HandoffFinding>) {
+    for waiver in array_at(payload, &["active_waivers"]) {
+        if let Some(expires_at) = string_field(waiver, "expires_at") {
+            if expires_at.as_str() < "2026-06-30T00:00:00Z" {
+                findings.push(error(
+                    "expired_waiver",
+                    format!("waiver expired at `{expires_at}`"),
+                ));
+            }
+        }
     }
 }
 

@@ -77,11 +77,20 @@ fn main() -> miette::Result<()> {
             }
         }
         Command::Handoff { action } => match action {
-            HandoffAction::Validate { payload } => {
+            HandoffAction::Validate { payload, json } => {
                 let report = cos_matic::handoff::validate_file(&payload)?;
-                print_handoff_report(&report);
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&report).into_diagnostic()?
+                    );
+                } else {
+                    print_handoff_report(&report);
+                }
                 if report.is_valid() {
-                    println!("ok: handoff payload is valid for planning");
+                    if !json {
+                        println!("ok: handoff payload is valid for planning");
+                    }
                     Ok(())
                 } else {
                     Err(miette!(
@@ -95,28 +104,38 @@ fn main() -> miette::Result<()> {
                     ))
                 }
             }
-            HandoffAction::Plan { payload, dry_run } => {
+            HandoffAction::Plan {
+                payload,
+                dry_run,
+                json,
+            } => {
                 if !dry_run {
                     return Err(miette!(
                         "handoff plan requires --dry-run; implementation execution is forbidden in MVP"
                     ));
                 }
                 let plan = cos_matic::handoff::dry_run_plan_file(&payload)?;
-                print_handoff_report(&plan.report);
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&plan).into_diagnostic()?);
+                } else {
+                    print_handoff_report(&plan.report);
+                }
                 if !plan.report.is_valid() {
                     return Err(miette!(
                         "handoff dry-run refused: validation has blocking errors"
                     ));
                 }
-                println!("dry-run gates:");
-                for gate in &plan.gates {
-                    println!("  - {gate}");
+                if !json {
+                    println!("dry-run gates:");
+                    for gate in &plan.gates {
+                        println!("  - {} [{}] {}", gate.code, gate.status, gate.detail);
+                    }
+                    println!("dry-run tasks:");
+                    for task in &plan.tasks {
+                        println!("  - {}", task.title);
+                    }
+                    println!("ok: dry-run plan produced; no execution performed");
                 }
-                println!("dry-run tasks:");
-                for task in &plan.tasks {
-                    println!("  - {task}");
-                }
-                println!("ok: dry-run plan produced; no execution performed");
                 Ok(())
             }
         },

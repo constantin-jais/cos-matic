@@ -374,6 +374,7 @@ dependencies = [
  "inquire",
  "miette",
  "orchestrator",
+ "serde_json",
  "tempfile",
  "tokio",
 ]
