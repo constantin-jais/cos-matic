@@ -19,6 +19,32 @@ pub struct Manifest {
     pub profiles: Vec<Profile>,
     #[serde(default)]
     pub targets: Vec<Target>,
+    #[serde(default)]
+    pub goals: Vec<Goal>,
+}
+
+/// Whether a goal blocks the run or is merely reported (ADR-0009).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GoalKind {
+    /// Failing this check fails the run before any file is written.
+    HardGate,
+    /// Reported, never blocks.
+    Observability,
+}
+
+/// A declarative, shell-free check over the configuration (ADR-0009).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Goal {
+    pub kind: GoalKind,
+    /// Check id: `no-dead-domains`, `require-domains`, `max-content-lines`.
+    pub check: String,
+    /// Threshold for `max-content-lines`.
+    #[serde(default)]
+    pub max: Option<i64>,
+    /// Required names for `require-domains`.
+    #[serde(default)]
+    pub domains: Option<Vec<String>>,
 }
 
 /// Project-level metadata.

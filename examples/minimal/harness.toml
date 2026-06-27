@@ -34,3 +34,12 @@ name = "cursor"
 adapter = "cursor"
 output_dir = ".cursor/rules"
 profile = "default"
+
+# Goals are safe, declarative checks the tool runs itself (ADR-0009).
+[[goals]]
+kind = "hard_gate"           # blocks generation if it fails
+check = "no-dead-domains"
+
+[[goals]]
+kind = "observability"       # reported, never blocks
+check = "max-content-lines"

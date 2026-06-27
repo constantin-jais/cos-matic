@@ -394,3 +394,59 @@ profile = "default"
     let style = agents.find("# Code Style").expect("code-style present");
     assert!(sec < style, "security-baseline should precede code-style");
 }
+
+const GATED_MANIFEST: &str = r#"
+[package]
+name = "gated"
+[[domains]]
+name = "used"
+content = "U"
+[[domains]]
+name = "orphan"
+content = "O"
+[[profiles]]
+name = "default"
+domains = ["used"]
+[[targets]]
+name = "agents"
+adapter = "universal"
+output_file = "AGENTS.md"
+profile = "default"
+[[goals]]
+kind = "KIND"
+check = "no-dead-domains"
+"#;
+
+#[test]
+fn hard_gate_failure_blocks_generation_and_writes_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("harness.toml"),
+        GATED_MANIFEST.replace("KIND", "hard_gate"),
+    )
+    .unwrap();
+    let manifest = root.join("harness.toml");
+    let err = generate::run(&opts(&manifest, false, false)).unwrap_err();
+    assert!(matches!(err, Error::GoalsFailed { .. }), "got {err:?}");
+    // A failed hard gate aborts before writing any output.
+    assert!(!root.join("AGENTS.md").exists());
+}
+
+#[test]
+fn observability_goal_reports_without_blocking() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("harness.toml"),
+        GATED_MANIFEST.replace("KIND", "observability"),
+    )
+    .unwrap();
+    let manifest = root.join("harness.toml");
+    let report = generate::run(&opts(&manifest, false, false)).unwrap();
+    // Generation succeeded despite the failing observability goal,
+    assert!(root.join("AGENTS.md").exists());
+    // and the failing outcome is still reported.
+    assert_eq!(report.goals.len(), 1);
+    assert!(!report.goals[0].passed);
+}

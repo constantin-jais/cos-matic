@@ -5,7 +5,10 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::config::parse::parse_file;
+use crate::config::schema::Manifest;
 use crate::error::{Error, Result};
+use crate::goals::{self, GoalOutcome};
+use crate::ir::ConfigTree;
 use crate::lock::Lockfile;
 use crate::render::{RenderInput, adapter_for};
 use crate::safe_write::{self, WriteAction};
@@ -52,6 +55,8 @@ pub struct Report {
     pub files: Vec<FileReport>,
     /// Graceful-degradation warnings collected across all targets (ADR-0007).
     pub warnings: Vec<String>,
+    /// Outcomes of the declared goals (ADR-0009); hard-gate failures abort the run.
+    pub goals: Vec<GoalOutcome>,
 }
 
 /// Inputs to a generate run.
@@ -65,15 +70,15 @@ pub struct Options {
     pub force: bool,
 }
 
-/// Compile the manifest into every declared target.
-pub fn run(opts: &Options) -> Result<Report> {
-    let display = opts
-        .manifest_path
+/// Parse, resolve, and validate the manifest into a `ConfigTree`. Shared by
+/// `generate` and the `goals` command.
+pub(crate) fn load_tree(manifest_path: &Path) -> Result<(PathBuf, Manifest, ConfigTree)> {
+    let display = manifest_path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "harness.toml".to_string());
 
-    let abs_manifest = std::fs::canonicalize(&opts.manifest_path).map_err(|source| Error::Io {
+    let abs_manifest = std::fs::canonicalize(manifest_path).map_err(|source| Error::Io {
         path: display.clone(),
         source,
     })?;
@@ -90,9 +95,30 @@ pub fn run(opts: &Options) -> Result<Report> {
         manifest.profiles.clone(),
         manifest.targets.clone(),
     )?;
+    Ok((project_root, manifest, tree))
+}
+
+/// Compile the manifest into every declared target.
+pub fn run(opts: &Options) -> Result<Report> {
+    let (project_root, manifest, tree) = load_tree(&opts.manifest_path)?;
+
+    // Goals run before any write: a failed hard gate aborts without producing
+    // output (ADR-0009).
+    let goal_outcomes = goals::evaluate(&tree, &manifest.goals)?;
+    let failures: Vec<String> = goal_outcomes
+        .iter()
+        .filter(|o| o.is_blocking_failure())
+        .map(|o| format!("  {}: {}", o.check, o.detail))
+        .collect();
+    if !failures.is_empty() {
+        return Err(Error::GoalsFailed { failures });
+    }
 
     let mut lock = Lockfile::load(&project_root)?;
-    let mut report = Report::default();
+    let mut report = Report {
+        goals: goal_outcomes,
+        ..Default::default()
+    };
     // Guard against two targets resolving to the same output path (case-insensitive,
     // for macOS/Windows): without this, the later write would silently clobber.
     let mut seen_paths: HashSet<String> = HashSet::new();

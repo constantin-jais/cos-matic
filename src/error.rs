@@ -65,6 +65,19 @@ pub enum Error {
     )]
     UnknownBuiltin { name: String },
 
+    /// A goal references a check the tool does not implement.
+    #[error("unknown goal check `{check}`")]
+    #[diagnostic(
+        code(aom::unknown_check),
+        help("available checks: no-dead-domains, require-domains, max-content-lines")
+    )]
+    UnknownCheck { check: String },
+
+    /// One or more hard-gate goals failed.
+    #[error("hard gate(s) failed:\n{}", .failures.join("\n"))]
+    #[diagnostic(code(aom::goals_failed))]
+    GoalsFailed { failures: Vec<String> },
+
     /// `[[includes]]` form a cycle.
     #[error("include cycle detected: {chain}")]
     #[diagnostic(code(aom::include_cycle))]

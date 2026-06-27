@@ -79,14 +79,11 @@ mod tests {
             name = "d"
             content = "x"
 
-            [[goals]]
-            kind = "hard_gate"
-            name = "no-secrets"
-
             [[targets]]
             name = "claude"
             adapter = "claude"
             profile = "default"
+            # Not-yet-implemented per-target fields must be ignored, not rejected.
             subagents = [{ name = "reviewer", model = "opus" }]
             hooks = [{ event = "sessionStart" }]
         "#;

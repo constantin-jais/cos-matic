@@ -20,6 +20,7 @@ mod cli;
 pub mod config;
 pub mod error;
 pub mod generate;
+pub mod goals;
 mod ir;
 pub mod library;
 mod lock;
@@ -54,6 +55,7 @@ pub fn run() -> miette::Result<()> {
             for warning in &report.warnings {
                 eprintln!("warning: {warning}");
             }
+            print_goals(&report.goals);
             if check {
                 println!("ok: {} file(s) up to date", report.files.len());
             }
@@ -71,5 +73,33 @@ pub fn run() -> miette::Result<()> {
                 Ok(())
             }
         },
+        Command::Goals { manifest } => {
+            let (_root, manifest, tree) = generate::load_tree(&manifest)?;
+            let outcomes = goals::evaluate(&tree, &manifest.goals)?;
+            print_goals(&outcomes);
+            let failures: Vec<String> = outcomes
+                .iter()
+                .filter(|o| o.is_blocking_failure())
+                .map(|o| format!("  {}: {}", o.check, o.detail))
+                .collect();
+            if failures.is_empty() {
+                Ok(())
+            } else {
+                Err(Error::GoalsFailed { failures }.into())
+            }
+        }
+    }
+}
+
+/// Print one line per goal outcome, marking hard-gate failures.
+fn print_goals(outcomes: &[goals::GoalOutcome]) {
+    use crate::config::schema::GoalKind;
+    for o in outcomes {
+        let kind = match o.kind {
+            GoalKind::HardGate => "hard_gate",
+            GoalKind::Observability => "observability",
+        };
+        let status = if o.passed { "PASS" } else { "FAIL" };
+        println!("goal [{kind}] {status}  {}: {}", o.check, o.detail);
     }
 }

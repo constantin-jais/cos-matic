@@ -37,6 +37,13 @@ pub enum Command {
         #[command(subcommand)]
         action: LibraryAction,
     },
+
+    /// Evaluate the declared goals without writing anything (a CI gate).
+    Goals {
+        /// Path to the root manifest.
+        #[arg(short, long, default_value = "harness.toml")]
+        manifest: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
