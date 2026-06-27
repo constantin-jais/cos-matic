@@ -19,3 +19,4 @@ doubles as teaching material. Format: context / decision / consequences.
 | [0012](0012-github-via-octocrab.md)                 | GitHub via octocrab (incident -> issue)                     |
 | [0013](0013-claude-tier2-extensions.md)             | Claude Tier-2: subagents, skills, hooks                     |
 | [0014](0014-dispatch-bounded-fixer.md)              | Dispatch: bounded hand-off to a fixer agent (no merge)      |
+| [0015](0015-autonomous-merge.md)                    | Autonomous merge: gate-and-merge on green evidence only     |

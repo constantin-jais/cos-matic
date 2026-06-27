@@ -8,7 +8,7 @@ use miette::{IntoDiagnostic, miette};
 use agent_o_matic::generate;
 use cli::{Cli, Command, IncidentCommand, LibraryAction};
 use orchestrator::forge::{self, GithubForge, RepoId};
-use orchestrator::{dispatch, incident};
+use orchestrator::{automerge, dispatch, incident};
 
 fn main() -> miette::Result<()> {
     let cli = Cli::parse();
@@ -145,6 +145,46 @@ fn main() -> miette::Result<()> {
                         "attempted: {summary}\nbranch `{branch}` is ready for review — \
                          gate it and merge it yourself (dispatch never merges)."
                     );
+                    Ok(())
+                }
+            }
+        }
+        Command::Automerge { branch, repo } => {
+            let repo_id = resolve_repo(repo.as_deref())?;
+            // Kill-switch: set AOM_AUTOMERGE_DISABLED to refuse every merge.
+            let env = automerge::MergeEnvelope {
+                enabled: std::env::var_os("AOM_AUTOMERGE_DISABLED").is_none(),
+                allowlist: vec![repo_id.clone()],
+                max_merges: 1,
+            };
+            let req = automerge::MergeRequest {
+                branch,
+                repo: repo_id.clone(),
+            };
+            let outcome = automerge::auto_merge(
+                &automerge::GhChecksGate,
+                &automerge::GhMerger,
+                &env,
+                &req,
+                0,
+            )
+            .into_diagnostic()?;
+
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .into_diagnostic()?
+                .as_secs();
+            if let Some(dir) = incident::default_journal_dir() {
+                automerge::append_audit(&dir, &req, &outcome, ts).into_diagnostic()?;
+            }
+
+            match outcome {
+                automerge::MergeOutcome::Refused { reason } => {
+                    eprintln!("refused: {reason}");
+                    std::process::exit(2);
+                }
+                automerge::MergeOutcome::Merged { reference } => {
+                    println!("merged: {reference}");
                     Ok(())
                 }
             }
