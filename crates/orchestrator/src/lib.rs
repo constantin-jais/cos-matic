@@ -4,3 +4,4 @@
 
 pub mod gate;
 pub mod goals;
+pub mod incident;

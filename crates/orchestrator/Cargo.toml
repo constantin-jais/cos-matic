@@ -9,8 +9,13 @@ license.workspace = true
 # everything else stays offline and deterministic. See ADR-0008 for why we
 # accept octocrab + tokio in an otherwise minimal-deps crate.
 [dependencies]
+blake3.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 toml.workspace = true
 octocrab.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

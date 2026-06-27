@@ -1291,8 +1291,11 @@ name = "orchestrator"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "blake3",
  "octocrab",
  "serde",
+ "serde_json",
+ "tempfile",
  "tokio",
  "toml",
 ]
