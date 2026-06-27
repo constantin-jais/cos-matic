@@ -53,7 +53,7 @@ pub struct FileReport {
 #[derive(Debug, Clone, Default)]
 pub struct Report {
     pub files: Vec<FileReport>,
-    /// Graceful-degradation warnings collected across all targets (ADR-0007).
+    /// Graceful-degradation warnings collected across all targets (ADR: feature-gating-graceful-degradation).
     pub warnings: Vec<String>,
     /// Outcomes of the declared goals (ADR-0009); hard-gate failures abort the run.
     pub goals: Vec<GoalOutcome>,

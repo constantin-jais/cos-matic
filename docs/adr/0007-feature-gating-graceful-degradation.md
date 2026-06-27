@@ -36,7 +36,7 @@ Rejected alternatives:
 
 ## Consequences
 
-- Warnings are collected into the run report (see ADR-0006), so degradation is
+- Warnings are collected into the run report (see ADR: adapter-output-model), so degradation is
   visible and auditable — consistent with the determinism/auditability wedge.
 - Adding a feature = extend the `Feature` enum, implement `supports` in each
   adapter, and have the adapter that owns it consume the metadata. Other adapters

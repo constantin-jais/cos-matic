@@ -2,7 +2,7 @@
 //!
 //! Errors are `miette::Diagnostic`s (built on `thiserror`) so that, e.g., a TOML
 //! parse failure renders with the offending span underlined and a `help` hint.
-//! See ADR-0005. No error message ever embeds a machine-local absolute path;
+//! See ADR: error-handling-miette. No error message ever embeds a machine-local absolute path;
 //! paths are repo-relative.
 
 use miette::{Diagnostic, NamedSource, SourceSpan};

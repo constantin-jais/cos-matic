@@ -39,6 +39,6 @@ preferred for real prose).
 - The schema needs a `Domain` with optional `content` xor `content_file`
   (exactly one), validated with a clear diagnostic.
 - Content files are resolved relative to the manifest's directory; paths must
-  stay inside the project (no machine-local absolute paths — see ADR-0004 / the
+  stay inside the project (no machine-local absolute paths — see ADR: safe-write-sentinel-lockfile / the
   no-local-paths requirement).
 - YAML manifest (option 4) rejected: weaker typing, indentation fragility.

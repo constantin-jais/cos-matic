@@ -7,10 +7,10 @@ Accepted (2026-06-27).
 ## Context
 
 Agent-O-Matic began as a single crate: a clean-room, deterministic
-configuration compiler whose charter (ADR-0001) scopes success to _learning in
+configuration compiler whose charter (ADR: positioning-and-why-build) scopes success to _learning in
 order to teach_ — not adoption — and names a remote content registry, "19
 targets on day one", and an early MCP server as gold-plating against that goal.
-Agent orchestration is **not** in ADR-0001's exclusion list; it was simply
+Agent orchestration is **not** in ADR: positioning-and-why-build's exclusion list; it was simply
 outside the compiler's scope. It enters here as a new, orthogonal concern, not
 as a retro-fitted exclusion.
 
@@ -25,15 +25,15 @@ Restructure the repository into a Cargo workspace rather than growing the
 compiler crate:
 
 - `crates/aom` — the compiler library `agent_o_matic`, **unchanged in spirit
-  and still governed by ADR-0001**. It gains no orchestration, no MCP, no
+  and still governed by ADR: positioning-and-why-build**. It gains no orchestration, no MCP, no
   network dependency. It loses only its CLI wiring (moved out), which sharpens
   its identity as a pure library.
 - `crates/cli` — the `aom` binary; a thin application layer that wires the
   compiler (and, later, the orchestrator) behind a clap CLI.
 - `crates/orchestrator` — the new concern: goals & gates (A1), then the
-  incident/issue/dispatch loop (A3+). Its charter is separate from ADR-0001.
+  incident/issue/dispatch loop (A3+). Its charter is separate from ADR: positioning-and-why-build.
 
-ADR-0001 is therefore **not superseded**: it continues to describe the
+ADR: positioning-and-why-build is therefore **not superseded**: it continues to describe the
 compiler crate exactly. This ADR adds the workspace and a distinct charter for
 the orchestrator.
 

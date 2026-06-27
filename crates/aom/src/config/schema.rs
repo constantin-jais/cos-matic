@@ -76,7 +76,7 @@ pub struct Domain {
     pub content_file: Option<String>,
     /// Optional file-glob activation (Tier-2 metadata). Adapters that support
     /// `Feature::GlobActivation` (e.g. Cursor) scope this domain to matching
-    /// files; others warn and apply it unconditionally. See ADR-0007.
+    /// files; others warn and apply it unconditionally. See ADR: feature-gating-graceful-degradation.
     pub globs: Option<Vec<String>>,
 }
 

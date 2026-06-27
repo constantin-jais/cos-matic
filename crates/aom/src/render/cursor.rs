@@ -5,7 +5,7 @@
 //! with `globs` becomes a scoped rule (`alwaysApply: false`); a domain without
 //! becomes an always-on rule. This is the multi-file, capability-bearing target
 //! that exercises the gating model — adapters that lack this capability degrade
-//! a domain's `globs` with a warning instead (see ADR-0007).
+//! a domain's `globs` with a warning instead (see ADR: feature-gating-graceful-degradation).
 //!
 //! Domain names are validated upstream (`ir::build`) to be safe identifiers, so
 //! they are used verbatim as filenames — no lossy slugging, hence no collisions.
