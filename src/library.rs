@@ -144,4 +144,25 @@ mod tests {
             lookup("tdd").unwrap().content.unwrap()
         );
     }
+
+    #[test]
+    fn every_builtin_has_non_empty_content() {
+        for (name, _, _) in catalog() {
+            let c = content(name).unwrap();
+            assert!(!c.trim().is_empty(), "builtin `{name}` has empty content");
+        }
+    }
+
+    #[test]
+    fn catalog_is_ordered_by_descending_priority() {
+        let cat = catalog();
+        for w in cat.windows(2) {
+            assert!(
+                w[0].1 >= w[1].1,
+                "catalog not sorted by descending priority: {:?} before {:?}",
+                w[0],
+                w[1]
+            );
+        }
+    }
 }

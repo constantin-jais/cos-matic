@@ -48,11 +48,12 @@ pub fn resolve(
     Ok(out)
 }
 
-/// Add a built-in domain once (later duplicates are no-ops). `base_dir` is unused
-/// for the inline content but kept for the uniform `DomainSource` shape.
+/// Add a built-in domain once. Built-ins are de-duplicated by *name* (a separate
+/// concern from file-include cycle detection, which keys on canonical path): the
+/// same built-in pulled from several manifests should be idempotent, not an error.
+/// Built-in content is inline, so the `DomainSource.base_dir` is irrelevant here.
 fn add_builtin(
     name: &str,
-    base_dir: &Path,
     out: &mut Vec<DomainSource>,
     library_added: &mut HashSet<String>,
 ) -> Result<()> {
@@ -61,7 +62,7 @@ fn add_builtin(
     }
     out.push(DomainSource {
         domain: crate::library::lookup(name)?,
-        base_dir: base_dir.to_path_buf(),
+        base_dir: PathBuf::from("."),
     });
     Ok(())
 }
@@ -120,12 +121,12 @@ fn resolve_rec(
 
     // `builtins = [...]` is sugar for `library://<name>` includes (ADR-0008).
     for name in &manifest.package.builtins {
-        add_builtin(name, &base_dir, out, library_added)?;
+        add_builtin(name, out, library_added)?;
     }
 
     for include in &manifest.includes {
         if let Some(name) = include.path.strip_prefix("library://") {
-            add_builtin(name, &base_dir, out, library_added)?;
+            add_builtin(name, out, library_added)?;
             continue;
         }
         let inc_path = resolve_within(project_root, &base_dir, &include.path)?;
@@ -316,5 +317,24 @@ mod tests {
         let err =
             resolve_src(tmp.path(), "[package]\nname=\"x\"\nbuiltins=[\"nope\"]\n").unwrap_err();
         assert!(matches!(err, Error::UnknownBuiltin { .. }));
+    }
+
+    #[test]
+    fn builtins_on_an_included_manifest_are_resolved() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(
+            root,
+            "lib.toml",
+            "[package]\nname=\"lib\"\nbuiltins=[\"four-axes\"]\n",
+        );
+        let p = write(
+            root,
+            "harness.toml",
+            "[package]\nname=\"x\"\n[[includes]]\npath=\"lib.toml\"\n",
+        );
+        let m = parse_str("harness.toml", &fs::read_to_string(&p).unwrap()).unwrap();
+        let domains = resolve(root, &p, &m).unwrap();
+        assert!(domains.iter().any(|d| d.domain.name == "four-axes"));
     }
 }

@@ -327,3 +327,70 @@ profile = "default"
     let agents = fs::read_to_string(root.join("AGENTS.md")).unwrap();
     assert!(agents.contains("Decision Axes"), "got: {agents}");
 }
+
+#[test]
+fn user_domain_colliding_with_a_builtin_name_is_rejected() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("harness.toml"),
+        r#"
+[package]
+name = "clash"
+builtins = ["tdd"]
+
+[[domains]]
+name = "tdd"
+content = "my own tdd"
+
+[[profiles]]
+name = "default"
+domains = ["tdd"]
+
+[[targets]]
+name = "agents"
+adapter = "universal"
+output_file = "AGENTS.md"
+profile = "default"
+"#,
+    )
+    .unwrap();
+    let manifest = root.join("harness.toml");
+    let err = generate::run(&opts(&manifest, false, false)).unwrap_err();
+    assert!(matches!(err, Error::DuplicateName { .. }), "got {err:?}");
+}
+
+#[test]
+fn multiple_builtins_render_in_priority_order() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("harness.toml"),
+        r#"
+[package]
+name = "ordered"
+builtins = ["code-style", "security-baseline"]
+
+[[profiles]]
+name = "default"
+domains = ["code-style", "security-baseline"]
+
+[[targets]]
+name = "agents"
+adapter = "universal"
+output_file = "AGENTS.md"
+profile = "default"
+"#,
+    )
+    .unwrap();
+    let manifest = root.join("harness.toml");
+    generate::run(&opts(&manifest, false, false)).unwrap();
+    // security-baseline (priority 90) must render before code-style (priority 70),
+    // regardless of declaration order.
+    let agents = fs::read_to_string(root.join("AGENTS.md")).unwrap();
+    let sec = agents
+        .find("# Security Baseline")
+        .expect("security present");
+    let style = agents.find("# Code Style").expect("code-style present");
+    assert!(sec < style, "security-baseline should precede code-style");
+}
