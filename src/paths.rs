@@ -4,6 +4,12 @@
 //! Everything here is purely lexical (no filesystem access), so it is valid for
 //! files that do not exist yet — which matters because we resolve output paths
 //! before writing them.
+//!
+//! KNOWN LIMITATION (Phase 1): because the check is lexical, a *symlink* that
+//! lives inside the project but points outside it is not caught here — the
+//! filesystem follows it at read time. The Phase-1 threat model is a
+//! self-authored config in one's own repo, so this is documented rather than
+//! hardened (a future canonicalize-and-recheck pass would close it).
 
 use std::path::{Component, Path, PathBuf};
 

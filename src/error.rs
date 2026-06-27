@@ -85,6 +85,28 @@ pub enum Error {
     #[diagnostic(code(aom::missing_output))]
     MissingOutput { target: String },
 
+    /// Two domains / profiles / targets share a name, which is ambiguous.
+    #[error("duplicate {kind} name `{name}`")]
+    #[diagnostic(
+        code(aom::duplicate_name),
+        help("each domain, profile, and target name must be unique")
+    )]
+    DuplicateName { kind: String, name: String },
+
+    /// Two targets write to the same output file.
+    #[error("targets `{first}` and `{second}` both write to `{output_file}`")]
+    #[diagnostic(code(aom::duplicate_output))]
+    DuplicateOutput {
+        output_file: String,
+        first: String,
+        second: String,
+    },
+
+    /// Serializing the lockfile or audit entry failed (should be infallible).
+    #[error("failed to serialize {what}: {message}")]
+    #[diagnostic(code(aom::serialize))]
+    Serialize { what: String, message: String },
+
     /// Safe-write refused to overwrite a hand-edited generated file.
     #[error("refusing to overwrite hand-edited file `{path}`")]
     #[diagnostic(

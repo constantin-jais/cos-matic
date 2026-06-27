@@ -76,7 +76,10 @@ impl Lockfile {
             path: HARNESS_DIR.to_string(),
             source,
         })?;
-        let text = toml::to_string_pretty(self).expect("lockfile serializes");
+        let text = toml::to_string_pretty(self).map_err(|e| Error::Serialize {
+            what: "lockfile".to_string(),
+            message: e.to_string(),
+        })?;
         std::fs::write(Self::path(project_root), text).map_err(|source| Error::Io {
             path: LOCK_FILE.to_string(),
             source,
@@ -110,5 +113,14 @@ mod tests {
     fn hash_is_stable() {
         assert_eq!(Lockfile::hash(b"x"), Lockfile::hash(b"x"));
         assert_ne!(Lockfile::hash(b"x"), Lockfile::hash(b"y"));
+    }
+
+    #[test]
+    fn corrupt_lockfile_is_a_clear_parse_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(HARNESS_DIR)).unwrap();
+        std::fs::write(tmp.path().join(LOCK_FILE), "version = [ unclosed").unwrap();
+        let err = Lockfile::load(tmp.path()).unwrap_err();
+        assert!(matches!(err, Error::Parse(_)), "got {err:?}");
     }
 }

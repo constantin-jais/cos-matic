@@ -27,6 +27,11 @@ pub enum WriteAction {
 
 /// Safe-write `content` to `rel_path` (relative to `project_root`), updating
 /// `lock` in memory. Caller is responsible for persisting the lock afterwards.
+///
+/// There is a benign TOCTOU window between `exists()` and `read()`: if the file
+/// is deleted in between, `read` returns a NotFound IO error that propagates
+/// safely (we never silently clobber). Acceptable for the single-runner CLI
+/// model; revisit if concurrent writers are ever introduced.
 pub fn write(
     project_root: &Path,
     rel_path: &str,

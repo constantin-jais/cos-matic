@@ -103,7 +103,13 @@ pub fn run(opts: &Options) -> Result<Report> {
                 target: target.name.clone(),
             })?;
 
-        let domains = merge::merge(&tree, &target.profile);
+        let profile = tree
+            .profile(&target.profile)
+            .ok_or_else(|| Error::UnknownProfile {
+                target: target.name.clone(),
+                profile: target.profile.clone(),
+            })?;
+        let domains = merge::merge(&tree, profile)?;
         let content = adapter.render(&domains);
 
         let action = if opts.check {
@@ -131,8 +137,18 @@ fn verify_no_drift(project_root: &Path, rel_path: &str, content: &str) -> Result
     let abs = crate::paths::safe_join(project_root, rel_path)?;
     match std::fs::read_to_string(&abs) {
         Ok(on_disk) if on_disk == content => Ok(()),
-        _ => Err(Error::Drift {
+        // Present but different, or absent entirely: that is genuine drift.
+        Ok(_) => Err(Error::Drift {
             path: rel_path.to_string(),
+        }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(Error::Drift {
+            path: rel_path.to_string(),
+        }),
+        // A real IO problem (permissions, etc.) must surface as itself, not as
+        // a misleading "drift" that sends the user in circles.
+        Err(source) => Err(Error::Io {
+            path: rel_path.to_string(),
+            source,
         }),
     }
 }

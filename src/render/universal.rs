@@ -17,6 +17,7 @@ impl Adapter for Universal {
         let body = domains
             .iter()
             .map(|d| d.content.trim_end())
+            .filter(|c| !c.is_empty())
             .collect::<Vec<_>>()
             .join("\n\n");
         if body.is_empty() {
@@ -57,5 +58,14 @@ mod tests {
         let a = d("a", "X");
         let b = d("b", "Y");
         assert_eq!(Universal.render(&[&a, &b]), Universal.render(&[&a, &b]));
+    }
+
+    #[test]
+    fn skips_empty_domain_content() {
+        // A domain whose content is empty (or whitespace-only) must not inject
+        // stray blank lines into the output.
+        let empty = d("empty", "   \n");
+        let real = d("real", "Beta");
+        assert_eq!(Universal.render(&[&empty, &real]), "Beta\n");
     }
 }

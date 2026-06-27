@@ -101,3 +101,51 @@ fn full_pipeline_is_deterministic_idempotent_and_clobber_safe() {
     assert_eq!(r6.files[0].action, Action::Updated);
     assert_eq!(fs::read_to_string(root.join("AGENTS.md")).unwrap(), agents);
 }
+
+#[test]
+fn missing_manifest_reports_io_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let manifest = tmp.path().join("harness.toml"); // never created
+    let err = generate::run(&opts(&manifest, false, false)).unwrap_err();
+    assert!(matches!(err, Error::Io { .. }), "got {err:?}");
+}
+
+#[test]
+fn includes_merge_domains_across_files_in_priority_order() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("lib.toml"),
+        "[package]\nname=\"lib\"\n[[domains]]\nname=\"sec\"\npriority=10\ncontent=\"SEC\"\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("harness.toml"),
+        r#"
+[package]
+name = "demo"
+[[includes]]
+path = "lib.toml"
+[[domains]]
+name = "style"
+priority = 1
+content = "STYLE"
+[[profiles]]
+name = "default"
+domains = ["style", "sec"]
+[[targets]]
+name = "agents-md"
+adapter = "universal"
+output_file = "AGENTS.md"
+profile = "default"
+"#,
+    )
+    .unwrap();
+    let manifest = root.join("harness.toml");
+    generate::run(&opts(&manifest, false, false)).unwrap();
+    // sec (priority 10, from the included file) renders before style (priority 1).
+    assert_eq!(
+        fs::read_to_string(root.join("AGENTS.md")).unwrap(),
+        "SEC\n\nSTYLE\n"
+    );
+}

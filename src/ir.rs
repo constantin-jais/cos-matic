@@ -5,6 +5,7 @@
 //! `content` / `content_file` exclusivity is enforced, and every profile→domain
 //! and target→profile reference is checked. Fail-fast with a pointed error.
 
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::config::schema::{Profile, Target};
@@ -67,6 +68,26 @@ pub fn build(
         targets,
     };
 
+    // Duplicate names would silently shadow each other (lookups take the first
+    // match), so reject them outright rather than guess intent.
+    check_unique(tree.domains.iter().map(|d| d.name.as_str()), "domain")?;
+    check_unique(tree.profiles.iter().map(|p| p.name.as_str()), "profile")?;
+    check_unique(tree.targets.iter().map(|t| t.name.as_str()), "target")?;
+
+    // Two targets writing the same file would clobber each other within one run.
+    let mut outputs: HashMap<&str, &str> = HashMap::new();
+    for t in &tree.targets {
+        if let Some(of) = &t.output_file
+            && let Some(first) = outputs.insert(of.as_str(), t.name.as_str())
+        {
+            return Err(Error::DuplicateOutput {
+                output_file: of.clone(),
+                first: first.to_string(),
+                second: t.name.clone(),
+            });
+        }
+    }
+
     for p in &tree.profiles {
         for dn in &p.domains {
             if tree.domain(dn).is_none() {
@@ -87,6 +108,20 @@ pub fn build(
     }
 
     Ok(tree)
+}
+
+/// Error if any name appears twice. `kind` labels the diagnostic.
+fn check_unique<'a>(names: impl Iterator<Item = &'a str>, kind: &str) -> Result<()> {
+    let mut seen = HashSet::new();
+    for name in names {
+        if !seen.insert(name) {
+            return Err(Error::DuplicateName {
+                kind: kind.to_string(),
+                name: name.to_string(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn load_content(project_root: &Path, base: &Path, domain: &str, rel: &str) -> Result<String> {
@@ -211,5 +246,74 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, Error::UnknownDomain { .. }));
+    }
+
+    #[test]
+    fn rejects_duplicate_domain_names() {
+        let root = PathBuf::from("/proj");
+        let err = build(
+            &root,
+            vec![
+                src(domain("a", Some("x"), None), &root),
+                src(domain("a", Some("y"), None), &root),
+            ],
+            vec![],
+            vec![],
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::DuplicateName { .. }));
+    }
+
+    #[test]
+    fn rejects_two_targets_writing_the_same_file() {
+        let root = PathBuf::from("/proj");
+        let target = |name: &str| Target {
+            name: name.into(),
+            adapter: "universal".into(),
+            output_file: Some("AGENTS.md".into()),
+            profile: "p".into(),
+        };
+        let err = build(
+            &root,
+            vec![src(domain("a", Some("x"), None), &root)],
+            vec![Profile {
+                name: "p".into(),
+                domains: vec!["a".into()],
+            }],
+            vec![target("t1"), target("t2")],
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::DuplicateOutput { .. }));
+    }
+
+    #[test]
+    fn reports_content_file_that_is_a_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir(root.join("a_dir")).unwrap();
+        let err = build(
+            root,
+            vec![src(domain("a", None, Some("a_dir")), root)],
+            vec![],
+            vec![],
+        )
+        .unwrap_err();
+        // Reading a directory as a string is an IO error, not "not found".
+        assert!(matches!(err, Error::Io { .. }));
+    }
+
+    #[test]
+    fn reports_non_utf8_content_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("bin.md"), [0xff, 0xfe, 0x00, 0x9f]).unwrap();
+        let err = build(
+            root,
+            vec![src(domain("a", None, Some("bin.md")), root)],
+            vec![],
+            vec![],
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::Io { .. }));
     }
 }

@@ -188,4 +188,32 @@ mod tests {
         let count = domains.iter().filter(|d| d.domain.name == "d").count();
         assert_eq!(count, 1, "diamond include should add domain `d` once");
     }
+
+    #[test]
+    fn detects_self_referential_include() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let a_path = write(
+            root,
+            "a.toml",
+            "[package]\nname=\"a\"\n[[includes]]\npath=\"a.toml\"\n",
+        );
+        let m = parse_str("a.toml", &fs::read_to_string(&a_path).unwrap()).unwrap();
+        let err = resolve(root, &a_path, &m).unwrap_err();
+        assert!(matches!(err, Error::IncludeCycle { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn reports_missing_include_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let a_path = write(
+            root,
+            "a.toml",
+            "[package]\nname=\"a\"\n[[includes]]\npath=\"missing.toml\"\n",
+        );
+        let m = parse_str("a.toml", &fs::read_to_string(&a_path).unwrap()).unwrap();
+        let err = resolve(root, &a_path, &m).unwrap_err();
+        assert!(matches!(err, Error::Io { .. }), "got {err:?}");
+    }
 }

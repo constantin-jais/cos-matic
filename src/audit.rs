@@ -47,7 +47,10 @@ fn append_entry(project_root: &Path, entry: &Entry<'_>) -> Result<()> {
         path: HARNESS_DIR.to_string(),
         source,
     })?;
-    let line = serde_json::to_string(entry).expect("audit entry serializes");
+    let line = serde_json::to_string(entry).map_err(|e| Error::Serialize {
+        what: "audit entry".to_string(),
+        message: e.to_string(),
+    })?;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)

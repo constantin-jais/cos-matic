@@ -105,4 +105,19 @@ mod tests {
             other => panic!("expected Parse error, got {other:?}"),
         }
     }
+
+    #[test]
+    fn rejects_missing_package_name() {
+        // `[package]` is present but `name` (a required field) is absent.
+        let err = parse_str("harness.toml", "[package]\n").unwrap_err();
+        assert!(matches!(err, Error::Parse(_)));
+    }
+
+    #[test]
+    fn rejects_wrongly_typed_priority() {
+        let text =
+            "[package]\nname=\"d\"\n[[domains]]\nname=\"a\"\ncontent=\"x\"\npriority=\"high\"\n";
+        let err = parse_str("harness.toml", text).unwrap_err();
+        assert!(matches!(err, Error::Parse(_)));
+    }
 }
