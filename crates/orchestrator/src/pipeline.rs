@@ -1,12 +1,14 @@
-//! The end-to-end loop: dispatch -> automerge -> deploy, under one global
-//! envelope (kill-switch, scope-fence, circuit-breaker) that **short-circuits at
-//! the first stage that does not advance**. The three stages are abstracted
-//! behind a `Stages` trait, so the composition (ordering, short-circuit,
-//! envelope) is proven offline; `RealStages` wires the real primitives, the live
-//! boundary. ADR: workspace-and-orchestrator-charter governs the whole chain.
+//! The end-to-end loop: dispatch -> publish -> automerge -> deploy, under one
+//! global envelope (kill-switch, scope-fence, circuit-breaker) that
+//! **short-circuits at the first stage that does not advance**. The stages are
+//! abstracted behind a `Stages` trait, so the composition (ordering,
+//! short-circuit, envelope) is proven offline; `RealStages` wires the real
+//! primitives, the live boundary. ADR: workspace-and-orchestrator-charter
+//! governs the whole chain.
 
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 
 use serde::Serialize;
 
@@ -34,10 +36,14 @@ impl std::fmt::Display for LoopError {
 
 impl std::error::Error for LoopError {}
 
-/// The loop's three stages; each reports whether it advanced.
+/// The loop's stages; each reports whether it advanced.
 pub trait Stages {
     /// Dispatch a bounded fix; returns the produced branch, or None if none.
     fn dispatch(&self, req: &LoopRequest) -> Result<Option<String>, LoopError>;
+    /// Publish the branch (push + open a PR) so the gate has something to check;
+    /// true if a PR is now open. Dispatch deliberately does not push — this is
+    /// the distinct, opt-in step that does.
+    fn publish(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError>;
     /// Gate-and-merge the branch on green evidence; true if merged.
     fn automerge(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError>;
     /// Canary-deploy + smoke the merged result; true if promoted.
@@ -61,7 +67,7 @@ pub enum LoopOutcome {
     Refused { reason: String },
     /// A stage did not advance; later stages were never reached.
     Stopped { stage: &'static str, reason: String },
-    /// dispatched -> merged -> deployed.
+    /// dispatched -> published -> merged -> deployed.
     Completed { branch: String },
 }
 
@@ -115,6 +121,12 @@ pub fn run_loop<S: Stages + ?Sized>(
             });
         }
     };
+    if !stages.publish(&branch, req)? {
+        return Ok(LoopOutcome::Stopped {
+            stage: "publish",
+            reason: "branch was not published (push or PR failed)".to_string(),
+        });
+    }
     if !stages.automerge(&branch, req)? {
         return Ok(LoopOutcome::Stopped {
             stage: "automerge",
@@ -164,10 +176,9 @@ pub fn append_audit(
     writeln!(f, "{line}")
 }
 
-/// The real stages: each wires the corresponding primitive (dispatch / automerge
-/// / deploy), scope-fenced to the loop's repo. Subprocess + network throughout,
-/// so it is exercised live, not in unit tests. The deploy commands come from the
-/// environment, like the standalone `aom deploy`.
+/// The real stages: each wires the corresponding primitive, scope-fenced to the
+/// loop's repo. Subprocess + network throughout, so it is exercised live, not in
+/// unit tests. The deploy commands come from the environment, like `aom deploy`.
 pub struct RealStages {
     pub repo_root: PathBuf,
     pub deploy_canary: String,
@@ -205,6 +216,31 @@ impl Stages for RealStages {
             dispatch::DispatchReport::Attempted { branch, .. } => Some(branch),
             dispatch::DispatchReport::Refused { .. } => None,
         })
+    }
+
+    fn publish(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError> {
+        // Push the local fix branch, then open a PR so the gate has a target.
+        let pushed = Command::new("git")
+            .args(["push", "-u", "origin", branch])
+            .current_dir(&self.repo_root)
+            .status()
+            .map_err(|e| LoopError(format!("git push: {e}")))?;
+        if !pushed.success() {
+            return Ok(false);
+        }
+        let body = if req.body.is_empty() {
+            req.title.as_str()
+        } else {
+            req.body.as_str()
+        };
+        let pr = Command::new("gh")
+            .args([
+                "pr", "create", "--head", branch, "--title", &req.title, "--body", body,
+            ])
+            .current_dir(&self.repo_root)
+            .status()
+            .map_err(|e| LoopError(format!("gh pr create: {e}")))?;
+        Ok(pr.success())
     }
 
     fn automerge(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError> {
@@ -265,6 +301,7 @@ mod tests {
     /// Records the stages reached, and returns configured per-stage results.
     struct FakeStages {
         dispatch_branch: Option<&'static str>,
+        published: bool,
         merged: bool,
         promoted: bool,
         reached: RefCell<Vec<&'static str>>,
@@ -274,6 +311,10 @@ mod tests {
         fn dispatch(&self, _req: &LoopRequest) -> Result<Option<String>, LoopError> {
             self.reached.borrow_mut().push("dispatch");
             Ok(self.dispatch_branch.map(String::from))
+        }
+        fn publish(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
+            self.reached.borrow_mut().push("publish");
+            Ok(self.published)
         }
         fn automerge(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
             self.reached.borrow_mut().push("automerge");
@@ -306,9 +347,15 @@ mod tests {
             max_iterations: max,
         }
     }
-    fn stages(branch: Option<&'static str>, merged: bool, promoted: bool) -> FakeStages {
+    fn stages(
+        branch: Option<&'static str>,
+        published: bool,
+        merged: bool,
+        promoted: bool,
+    ) -> FakeStages {
         FakeStages {
             dispatch_branch: branch,
+            published,
             merged,
             promoted,
             reached: RefCell::new(Vec::new()),
@@ -317,49 +364,66 @@ mod tests {
 
     #[test]
     fn all_green_completes_in_order() {
-        let s = stages(Some("aom/fix/issue-8"), true, true);
+        let s = stages(Some("aom/fix/issue-8"), true, true, true);
         let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0).unwrap();
         assert!(matches!(r, LoopOutcome::Completed { .. }));
-        assert_eq!(*s.reached.borrow(), ["dispatch", "automerge", "deploy"]);
+        assert_eq!(
+            *s.reached.borrow(),
+            ["dispatch", "publish", "automerge", "deploy"]
+        );
     }
 
     #[test]
-    fn dispatch_none_stops_before_merge() {
-        let s = stages(None, true, true);
+    fn dispatch_none_stops_before_publish() {
+        let s = stages(None, true, true, true);
         let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0).unwrap();
         match r {
             LoopOutcome::Stopped { stage, .. } => assert_eq!(stage, "dispatch"),
             other => panic!("expected stop at dispatch, got {other:?}"),
         }
-        // Short-circuit: automerge/deploy were never reached.
         assert_eq!(*s.reached.borrow(), ["dispatch"]);
     }
 
     #[test]
+    fn unpublished_stops_before_merge() {
+        let s = stages(Some("b"), false, true, true);
+        let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0).unwrap();
+        match r {
+            LoopOutcome::Stopped { stage, .. } => assert_eq!(stage, "publish"),
+            other => panic!("expected stop at publish, got {other:?}"),
+        }
+        // Short-circuit: automerge/deploy never reached.
+        assert_eq!(*s.reached.borrow(), ["dispatch", "publish"]);
+    }
+
+    #[test]
     fn unmerged_stops_before_deploy() {
-        let s = stages(Some("b"), false, true);
+        let s = stages(Some("b"), true, false, true);
         let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0).unwrap();
         match r {
             LoopOutcome::Stopped { stage, .. } => assert_eq!(stage, "automerge"),
             other => panic!("expected stop at automerge, got {other:?}"),
         }
-        assert_eq!(*s.reached.borrow(), ["dispatch", "automerge"]);
+        assert_eq!(*s.reached.borrow(), ["dispatch", "publish", "automerge"]);
     }
 
     #[test]
     fn rolled_back_stops_at_deploy() {
-        let s = stages(Some("b"), true, false);
+        let s = stages(Some("b"), true, true, false);
         let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0).unwrap();
         match r {
             LoopOutcome::Stopped { stage, .. } => assert_eq!(stage, "deploy"),
             other => panic!("expected stop at deploy, got {other:?}"),
         }
-        assert_eq!(*s.reached.borrow(), ["dispatch", "automerge", "deploy"]);
+        assert_eq!(
+            *s.reached.borrow(),
+            ["dispatch", "publish", "automerge", "deploy"]
+        );
     }
 
     #[test]
     fn kill_switch_refuses_before_any_stage() {
-        let s = stages(Some("b"), true, true);
+        let s = stages(Some("b"), true, true, true);
         let r = run_loop(&s, &env(false, vec![repo()], 1), &req(), 0).unwrap();
         assert!(matches!(r, LoopOutcome::Refused { .. }));
         assert!(s.reached.borrow().is_empty(), "no stage runs when disabled");
@@ -367,7 +431,7 @@ mod tests {
 
     #[test]
     fn scope_fence_refuses_off_allowlist() {
-        let s = stages(Some("b"), true, true);
+        let s = stages(Some("b"), true, true, true);
         let r = run_loop(&s, &env(true, vec![], 1), &req(), 0).unwrap();
         match r {
             LoopOutcome::Refused { reason } => assert!(reason.contains("scope-fence")),
@@ -378,7 +442,7 @@ mod tests {
 
     #[test]
     fn circuit_breaker_refuses_when_exhausted() {
-        let s = stages(Some("b"), true, true);
+        let s = stages(Some("b"), true, true, true);
         let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 1).unwrap();
         match r {
             LoopOutcome::Refused { reason } => assert!(reason.contains("circuit-breaker")),
