@@ -44,6 +44,12 @@ pub enum Command {
         #[arg(short, long, default_value = "harness.toml")]
         manifest: PathBuf,
     },
+
+    /// Incident handling (open an idempotent GitHub issue).
+    Incident {
+        #[command(subcommand)]
+        command: IncidentCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -55,5 +61,39 @@ pub enum LibraryAction {
     Show {
         /// Built-in name (see `aom library list`).
         name: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum IncidentCommand {
+    /// Create or reuse a GitHub issue for an incident (idempotent by fingerprint).
+    Open {
+        /// Incident class, e.g. `gate-red`, `ci-failure`.
+        #[arg(long)]
+        kind: String,
+
+        /// Issue title.
+        #[arg(long)]
+        title: String,
+
+        /// Issue body (markdown).
+        #[arg(long, default_value = "")]
+        body: String,
+
+        /// Severity recorded in the journal, e.g. low | medium | high.
+        #[arg(long, default_value = "medium")]
+        severity: String,
+
+        /// Fingerprint key (defaults to the title); same kind+key reuses the same issue.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// Target repo `owner/name` (defaults to the `origin` remote).
+        #[arg(long)]
+        repo: Option<String>,
+
+        /// Label to attach (repeatable). Must already exist on the repo.
+        #[arg(long = "label")]
+        labels: Vec<String>,
     },
 }

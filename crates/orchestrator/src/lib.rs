@@ -1,16 +1,8 @@
 //! Orchestrator — the agentic CI/CD control loop built on top of the
-//! `agent_o_matic` compiler. Phases A1+ add: goals & gates, incident model,
-//! GitHub issue bridge, and Claude-Code dispatch. A0 ships only this scaffold.
+//! `agent_o_matic` compiler. First autonomous primitive: incident -> issue
+//! (idempotent GitHub issue creation), journaled zero-PII. Dispatch (hand-off
+//! to a fixer agent) is the next increment. Goals & gates live in the compiler
+//! (ADR: goals-safe-declarative-checks).
 
-/// Stable crate identity used by early wiring tests; replaced by real modules in A1.
-pub const CRATE_NAME: &str = "orchestrator";
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn workspace_member_links() {
-        assert_eq!(CRATE_NAME, "orchestrator");
-    }
-}
+pub mod forge;
+pub mod incident;

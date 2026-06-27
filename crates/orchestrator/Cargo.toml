@@ -5,6 +5,15 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
-# A0 ships only the scaffold. The dependency on `agent-o-matic` (for the future
-# drift gate) is added in A1, when the gate actually calls into the compiler.
+# Network access (GitHub via octocrab) is confined to the `forge` module;
+# everything else stays offline and deterministic. See ADR-0012.
 [dependencies]
+blake3.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+octocrab.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

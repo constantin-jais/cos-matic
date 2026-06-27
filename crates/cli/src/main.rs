@@ -1,11 +1,14 @@
-//! The `aom` binary: parse args, dispatch to the compiler, print a report.
+//! The `aom` binary: parse args, dispatch to the compiler or the orchestrator.
 
 mod cli;
 
 use clap::Parser;
-use cli::{Cli, Command, LibraryAction};
+use miette::{IntoDiagnostic, miette};
 
 use agent_o_matic::generate;
+use cli::{Cli, Command, IncidentCommand, LibraryAction};
+use orchestrator::forge::{self, GithubForge, RepoId};
+use orchestrator::incident;
 
 fn main() -> miette::Result<()> {
     let cli = Cli::parse();
@@ -58,6 +61,49 @@ fn main() -> miette::Result<()> {
                 Err(agent_o_matic::Error::GoalsFailed { failures }.into())
             }
         }
+        Command::Incident {
+            command:
+                IncidentCommand::Open {
+                    kind,
+                    title,
+                    body,
+                    severity,
+                    key,
+                    repo,
+                    labels,
+                },
+        } => {
+            let repo_id = resolve_repo(repo.as_deref())?;
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .into_diagnostic()?
+                .as_secs();
+            let key = key.unwrap_or_else(|| title.clone());
+            let inc = incident::Incident::new(kind, severity, title, body, &key, ts);
+
+            if let Some(dir) = incident::default_journal_dir() {
+                incident::append_journal(&inc, &dir).into_diagnostic()?;
+            }
+
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .into_diagnostic()?;
+            let (issue, created) = rt
+                .block_on(async {
+                    let forge = GithubForge::from_env()?;
+                    forge::open_or_reuse(&forge, &repo_id, &inc, &labels).await
+                })
+                .into_diagnostic()?;
+
+            println!(
+                "{} #{} {}",
+                if created { "created" } else { "reused" },
+                issue.number,
+                issue.url
+            );
+            Ok(())
+        }
     }
 }
 
@@ -72,4 +118,33 @@ fn print_goals(outcomes: &[agent_o_matic::goals::GoalOutcome]) {
         let status = if o.passed { "PASS" } else { "FAIL" };
         println!("goal [{kind}] {status}  {}: {}", o.check, o.detail);
     }
+}
+
+/// Resolve the target repo: `--repo owner/name`, else the `origin` remote.
+fn resolve_repo(repo: Option<&str>) -> miette::Result<RepoId> {
+    if let Some(r) = repo {
+        let (owner, name) = r
+            .split_once('/')
+            .ok_or_else(|| miette!("--repo must be `owner/name`, got `{r}`"))?;
+        return Ok(RepoId {
+            owner: owner.to_string(),
+            name: name.to_string(),
+        });
+    }
+    let out = std::process::Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .output()
+        .into_diagnostic()?;
+    if !out.status.success() {
+        return Err(miette!(
+            "could not read the `origin` remote; pass --repo owner/name"
+        ));
+    }
+    let url = String::from_utf8_lossy(&out.stdout);
+    RepoId::parse_remote(url.trim()).ok_or_else(|| {
+        miette!(
+            "could not parse a GitHub repo from `origin` ({})",
+            url.trim()
+        )
+    })
 }

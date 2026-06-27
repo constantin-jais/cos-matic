@@ -16,3 +16,4 @@ doubles as teaching material. Format: context / decision / consequences.
 | [0009](0009-goals-safe-declarative-checks.md)       | Goals: safe declarative checks (hard-gate vs observability) |
 | [0010](0010-drift-as-ci-gate.md)                    | Drift detection as a CI gate (+ dogfood)                    |
 | [0011](0011-workspace-and-orchestrator-charter.md)  | Workspace split + orchestrator charter                      |
+| [0012](0012-github-via-octocrab.md)                 | GitHub via octocrab (incident -> issue)                     |
