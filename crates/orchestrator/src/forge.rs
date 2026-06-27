@@ -123,23 +123,30 @@ impl Forge for GithubForge {
         repo: &RepoId,
         marker: &str,
     ) -> Result<Option<IssueRef>, ForgeError> {
-        // NOTE: GitHub search is eventually consistent (indexing lag), so this
-        // dedups across separate runs, not concurrent double-submits.
-        let query = format!(
-            "repo:{}/{} is:issue is:open {}",
-            repo.owner, repo.name, marker
-        );
+        // Dedup by scanning open issues for the fingerprint marker. The issues
+        // LIST reflects writes sooner than search, but GitHub reads are still
+        // eventually consistent: two calls within ~1-2s can each miss the
+        // other's just-created issue and duplicate (observed live). Real
+        // incidents re-fire far apart, so this is acceptable; a local
+        // fingerprint->number cache could harden same-machine rapid calls
+        // later. Scans the first 100 open issues.
         let page = self
             .client
-            .search()
-            .issues_and_pull_requests(&query)
+            .issues(&repo.owner, &repo.name)
+            .list()
+            .state(octocrab::params::State::Open)
+            .per_page(100u8)
             .send()
             .await
-            .map_err(|e| ForgeError(format!("search issues: {e}")))?;
-        Ok(page.items.into_iter().next().map(|i| IssueRef {
-            number: i.number,
-            url: i.html_url.to_string(),
-        }))
+            .map_err(|e| ForgeError(format!("list issues: {e}")))?;
+        Ok(page
+            .items
+            .into_iter()
+            .find(|i| i.body.as_deref().is_some_and(|b| b.contains(marker)))
+            .map(|i| IssueRef {
+                number: i.number,
+                url: i.html_url.to_string(),
+            }))
     }
 
     async fn create_issue(
