@@ -5,11 +5,32 @@
 //! is only reported. The checks operate at the *config* level (a profile's merged
 //! content is known before rendering), so they run before any file is written.
 
-use std::collections::HashSet;
-
 use crate::config::schema::{Goal, GoalKind};
 use crate::error::{Error, Result};
-use crate::ir::ConfigTree;
+use crate::ir::{ConfigTree, ResolvedDomain};
+use crate::render::concatenate;
+
+/// The supported check ids, single source of truth.
+pub const CHECK_IDS: &[&str] = &["no-dead-domains", "require-domains", "max-content-lines"];
+
+/// A check, parsed from its id so dispatch is exhaustive and typo-proof.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Check {
+    NoDeadDomains,
+    RequireDomains,
+    MaxContentLines,
+}
+
+impl Check {
+    fn parse(id: &str) -> Option<Self> {
+        match id {
+            "no-dead-domains" => Some(Check::NoDeadDomains),
+            "require-domains" => Some(Check::RequireDomains),
+            "max-content-lines" => Some(Check::MaxContentLines),
+            _ => None,
+        }
+    }
+}
 
 /// The result of evaluating one goal.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,16 +54,35 @@ pub fn evaluate(tree: &ConfigTree, goals: &[Goal]) -> Result<Vec<GoalOutcome>> {
 }
 
 fn evaluate_one(tree: &ConfigTree, goal: &Goal) -> Result<GoalOutcome> {
-    let (passed, detail) = match goal.check.as_str() {
-        "no-dead-domains" => check_no_dead_domains(tree),
-        "require-domains" => check_require_domains(tree, goal.domains.as_deref().unwrap_or(&[])),
-        "max-content-lines" => check_max_content_lines(tree, goal.max),
-        other => {
-            return Err(Error::UnknownCheck {
-                check: other.to_string(),
-            });
+    let check = Check::parse(&goal.check).ok_or_else(|| Error::UnknownCheck {
+        check: goal.check.clone(),
+    })?;
+
+    // Reject misconfigured goals: a check missing its required parameter would
+    // silently pass, turning a hard gate into a no-op (the review's footgun).
+    let (passed, detail) = match check {
+        Check::NoDeadDomains => check_no_dead_domains(tree),
+        Check::RequireDomains => {
+            let domains = goal.domains.as_deref().unwrap_or(&[]);
+            if domains.is_empty() {
+                return Err(Error::InvalidGoal {
+                    check: goal.check.clone(),
+                    reason: "needs a non-empty `domains` list".to_string(),
+                });
+            }
+            check_require_domains(tree, domains)
+        }
+        Check::MaxContentLines => {
+            if goal.kind == GoalKind::HardGate && goal.max.is_none() {
+                return Err(Error::InvalidGoal {
+                    check: goal.check.clone(),
+                    reason: "a hard_gate needs a `max` threshold to enforce".to_string(),
+                });
+            }
+            check_max_content_lines(tree, goal.max)
         }
     };
+
     Ok(GoalOutcome {
         kind: goal.kind,
         check: goal.check.clone(),
@@ -53,7 +93,7 @@ fn evaluate_one(tree: &ConfigTree, goal: &Goal) -> Result<GoalOutcome> {
 
 /// Every domain must be selected by at least one profile.
 fn check_no_dead_domains(tree: &ConfigTree) -> (bool, String) {
-    let used: HashSet<&str> = tree
+    let used: std::collections::HashSet<&str> = tree
         .profiles
         .iter()
         .flat_map(|p| p.domains.iter().map(String::as_str))
@@ -79,7 +119,8 @@ fn check_no_dead_domains(tree: &ConfigTree) -> (bool, String) {
 
 /// Every named domain must exist.
 fn check_require_domains(tree: &ConfigTree, required: &[String]) -> (bool, String) {
-    let have: HashSet<&str> = tree.domains.iter().map(|d| d.name.as_str()).collect();
+    let have: std::collections::HashSet<&str> =
+        tree.domains.iter().map(|d| d.name.as_str()).collect();
     let missing: Vec<&str> = required
         .iter()
         .map(String::as_str)
@@ -98,27 +139,30 @@ fn check_require_domains(tree: &ConfigTree, required: &[String]) -> (bool, Strin
     }
 }
 
-/// The largest profile's merged content must stay within `max` lines. Without a
+/// The largest single rendered file (a profile's merged content) must stay within
+/// `max` lines. The count uses the real renderer (`concatenate`) so blank-line
+/// separators are included — matching the bytes actually written. Without a
 /// `max`, the metric is only reported (an observability use).
 fn check_max_content_lines(tree: &ConfigTree, max: Option<i64>) -> (bool, String) {
     let largest = tree
         .profiles
         .iter()
         .map(|p| {
-            p.domains
-                .iter()
-                .filter_map(|n| tree.domain(n))
-                .map(|d| d.content.lines().count())
-                .sum::<usize>()
+            let domains: Vec<&ResolvedDomain> =
+                p.domains.iter().filter_map(|n| tree.domain(n)).collect();
+            concatenate(&domains).lines().count()
         })
         .max()
         .unwrap_or(0);
     match max {
         Some(m) => (
             largest as i64 <= m,
-            format!("largest profile content: {largest} line(s) (max {m})"),
+            format!("largest profile renders to {largest} line(s) (max {m})"),
         ),
-        None => (true, format!("largest profile content: {largest} line(s)")),
+        None => (
+            true,
+            format!("largest profile renders to {largest} line(s)"),
+        ),
     }
 }
 
@@ -126,7 +170,6 @@ fn check_max_content_lines(tree: &ConfigTree, max: Option<i64>) -> (bool, String
 mod tests {
     use super::*;
     use crate::config::schema::Profile;
-    use crate::ir::ResolvedDomain;
 
     fn domain(name: &str, content: &str) -> ResolvedDomain {
         ResolvedDomain {
@@ -157,6 +200,13 @@ mod tests {
             check: check.to_string(),
             max,
             domains: domains.map(|v| v.into_iter().map(str::to_string).collect()),
+        }
+    }
+
+    #[test]
+    fn all_check_ids_parse() {
+        for id in CHECK_IDS {
+            assert!(Check::parse(id).is_some(), "{id} must parse");
         }
     }
 
@@ -205,20 +255,68 @@ mod tests {
     }
 
     #[test]
-    fn max_content_lines_enforces_budget() {
-        let t = tree(vec![domain("a", "l1\nl2\nl3\n")], vec![("p", vec!["a"])]);
+    fn require_domains_without_domains_is_a_misconfiguration() {
+        let t = tree(vec![domain("a", "x")], vec![("p", vec!["a"])]);
+        let err = evaluate(
+            &t,
+            &[goal(GoalKind::HardGate, "require-domains", None, None)],
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::InvalidGoal { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn hard_gate_max_content_lines_without_max_is_a_misconfiguration() {
+        let t = tree(vec![domain("a", "x")], vec![("p", vec!["a"])]);
+        let err = evaluate(
+            &t,
+            &[goal(GoalKind::HardGate, "max-content-lines", None, None)],
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::InvalidGoal { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn observability_max_content_lines_without_max_just_reports() {
+        let t = tree(vec![domain("a", "l1\nl2\n")], vec![("p", vec!["a"])]);
+        let out = evaluate(
+            &t,
+            &[goal(
+                GoalKind::Observability,
+                "max-content-lines",
+                None,
+                None,
+            )],
+        )
+        .unwrap();
+        assert!(out[0].passed);
+        assert!(out[0].detail.contains("line(s)"));
+    }
+
+    #[test]
+    fn max_content_lines_counts_blank_separators_like_the_renderer() {
+        // Two 2-line domains render as "A1\nA2\n\nB1\nB2\n" = 5 lines (blank between).
+        let t = tree(
+            vec![domain("a", "A1\nA2\n"), domain("b", "B1\nB2\n")],
+            vec![("p", vec!["a", "b"])],
+        );
+        // Budget of 5 passes; 4 (the naive per-domain sum) must fail.
         let pass = evaluate(
             &t,
             &[goal(GoalKind::HardGate, "max-content-lines", Some(5), None)],
         )
         .unwrap();
-        assert!(pass[0].passed);
+        assert!(
+            pass[0].passed,
+            "5 lines should fit a max of 5: {}",
+            pass[0].detail
+        );
         let fail = evaluate(
             &t,
-            &[goal(GoalKind::HardGate, "max-content-lines", Some(2), None)],
+            &[goal(GoalKind::HardGate, "max-content-lines", Some(4), None)],
         )
         .unwrap();
-        assert!(!fail[0].passed);
+        assert!(!fail[0].passed, "5 rendered lines must exceed a max of 4");
     }
 
     #[test]

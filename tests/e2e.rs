@@ -428,8 +428,50 @@ fn hard_gate_failure_blocks_generation_and_writes_nothing() {
     .unwrap();
     let manifest = root.join("harness.toml");
     let err = generate::run(&opts(&manifest, false, false)).unwrap_err();
-    assert!(matches!(err, Error::GoalsFailed { .. }), "got {err:?}");
+    match err {
+        Error::GoalsFailed { failures } => {
+            assert_eq!(failures.len(), 1);
+            assert!(failures[0].contains("no-dead-domains"), "got {failures:?}");
+            assert!(
+                failures[0].contains("orphan"),
+                "should name the dead domain"
+            );
+        }
+        other => panic!("expected GoalsFailed, got {other:?}"),
+    }
     // A failed hard gate aborts before writing any output.
+    assert!(!root.join("AGENTS.md").exists());
+}
+
+#[test]
+fn unknown_check_in_a_goal_is_rejected_and_writes_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("harness.toml"),
+        r#"
+[package]
+name = "badcheck"
+[[domains]]
+name = "a"
+content = "A"
+[[profiles]]
+name = "default"
+domains = ["a"]
+[[targets]]
+name = "agents"
+adapter = "universal"
+output_file = "AGENTS.md"
+profile = "default"
+[[goals]]
+kind = "hard_gate"
+check = "does-not-exist"
+"#,
+    )
+    .unwrap();
+    let manifest = root.join("harness.toml");
+    let err = generate::run(&opts(&manifest, false, false)).unwrap_err();
+    assert!(matches!(err, Error::UnknownCheck { .. }), "got {err:?}");
     assert!(!root.join("AGENTS.md").exists());
 }
 

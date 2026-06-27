@@ -69,9 +69,15 @@ pub enum Error {
     #[error("unknown goal check `{check}`")]
     #[diagnostic(
         code(aom::unknown_check),
-        help("available checks: no-dead-domains, require-domains, max-content-lines")
+        help("see the available checks in docs/adr/0009 (or `goals::CHECK_IDS`)")
     )]
     UnknownCheck { check: String },
+
+    /// A goal is missing a parameter its check requires (e.g. a hard-gate
+    /// `max-content-lines` with no `max`), which would make the gate a no-op.
+    #[error("misconfigured goal `{check}`: {reason}")]
+    #[diagnostic(code(aom::invalid_goal))]
+    InvalidGoal { check: String, reason: String },
 
     /// One or more hard-gate goals failed.
     #[error("hard gate(s) failed:\n{}", .failures.join("\n"))]
