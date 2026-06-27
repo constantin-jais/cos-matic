@@ -3,6 +3,7 @@
 //! in `GithubForge`; network access is confined to this module (ADR-0008).
 
 use async_trait::async_trait;
+use octocrab::Octocrab;
 
 use crate::incident::{Incident, issue_body_with_marker};
 
@@ -89,6 +90,79 @@ pub async fn open_or_reuse<F: Forge + ?Sized>(
     let body = issue_body_with_marker(&inc.body, &inc.fingerprint);
     let issue = forge.create_issue(repo, &inc.title, &body, labels).await?;
     Ok((issue, true))
+}
+
+/// The real forge: GitHub via octocrab. Network access lives only here.
+pub struct GithubForge {
+    client: Octocrab,
+}
+
+impl GithubForge {
+    /// Build from a token in `GITHUB_TOKEN` or `GH_TOKEN` (never from `gh`).
+    pub fn from_env() -> Result<Self, ForgeError> {
+        let token = std::env::var("GITHUB_TOKEN")
+            .or_else(|_| std::env::var("GH_TOKEN"))
+            .map_err(|_| {
+                ForgeError(
+                    "set GITHUB_TOKEN or GH_TOKEN (locally: `export GITHUB_TOKEN=$(gh auth token)`)"
+                        .to_string(),
+                )
+            })?;
+        let client = Octocrab::builder()
+            .personal_token(token)
+            .build()
+            .map_err(|e| ForgeError(format!("octocrab build: {e}")))?;
+        Ok(Self { client })
+    }
+}
+
+#[async_trait]
+impl Forge for GithubForge {
+    async fn find_open_issue_by_marker(
+        &self,
+        repo: &RepoId,
+        marker: &str,
+    ) -> Result<Option<IssueRef>, ForgeError> {
+        // NOTE: GitHub search is eventually consistent (indexing lag), so this
+        // dedups across separate runs, not concurrent double-submits.
+        let query = format!(
+            "repo:{}/{} is:issue is:open {}",
+            repo.owner, repo.name, marker
+        );
+        let page = self
+            .client
+            .search()
+            .issues_and_pull_requests(&query)
+            .send()
+            .await
+            .map_err(|e| ForgeError(format!("search issues: {e}")))?;
+        Ok(page.items.into_iter().next().map(|i| IssueRef {
+            number: i.number,
+            url: i.html_url.to_string(),
+        }))
+    }
+
+    async fn create_issue(
+        &self,
+        repo: &RepoId,
+        title: &str,
+        body: &str,
+        labels: &[String],
+    ) -> Result<IssueRef, ForgeError> {
+        let issue = self
+            .client
+            .issues(&repo.owner, &repo.name)
+            .create(title)
+            .body::<String>(Some(body.to_string()))
+            .labels(labels.to_vec())
+            .send()
+            .await
+            .map_err(|e| ForgeError(format!("create issue: {e}")))?;
+        Ok(IssueRef {
+            number: issue.number,
+            url: issue.html_url.to_string(),
+        })
+    }
 }
 
 #[cfg(test)]
