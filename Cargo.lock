@@ -87,6 +87,7 @@ dependencies = [
  "agent-o-matic",
  "clap",
  "miette",
+ "tempfile",
 ]
 
 [[package]]

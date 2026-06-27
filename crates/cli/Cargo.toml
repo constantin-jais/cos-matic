@@ -13,3 +13,6 @@ path = "src/main.rs"
 agent-o-matic.workspace = true
 clap.workspace = true
 miette.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
