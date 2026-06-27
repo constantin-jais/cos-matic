@@ -118,6 +118,84 @@ pub fn status(metric: &str, op: Op, threshold: i64, metrics: &Metrics) -> Status
     }
 }
 
+fn glyph(s: Status) -> &'static str {
+    match s {
+        Status::Green => "✅",
+        Status::Red => "🔴",
+        Status::Pending => "⏳",
+    }
+}
+
+fn op_symbol(op: Op) -> &'static str {
+    match op {
+        Op::Eq => "==",
+        Op::Ne => "!=",
+        Op::Lt => "<",
+        Op::Lte => "<=",
+        Op::Gt => ">",
+        Op::Gte => ">=",
+    }
+}
+
+/// Render a Markdown report of the goals evaluated against live `metrics`.
+///
+/// Hard gates and observability rows show `✅` / `🔴` / `⏳` (pending when the
+/// metric is unavailable). Pure: no I/O, deterministic for a given input.
+pub fn render_markdown(goals: &Goals, metrics: &Metrics) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    let _ = writeln!(out, "# Phase {} — {}\n", goals.phase.id, goals.phase.title);
+
+    if !goals.milestone.is_empty() {
+        let _ = writeln!(out, "## Milestones\n");
+        for m in &goals.milestone {
+            let check = if m.done { 'x' } else { ' ' };
+            let _ = writeln!(out, "- [{check}] {}", m.title);
+        }
+        out.push('\n');
+    }
+
+    if !goals.gate.is_empty() {
+        let _ = writeln!(out, "## Hard gates\n");
+        let _ = writeln!(out, "| Gate | Metric | Rule | Status |");
+        let _ = writeln!(out, "| --- | --- | --- | --- |");
+        for g in &goals.gate {
+            let s = status(&g.metric, g.op, g.threshold, metrics);
+            let _ = writeln!(
+                out,
+                "| {} | `{}` | `{} {}` | {} |",
+                g.name,
+                g.metric,
+                op_symbol(g.op),
+                g.threshold,
+                glyph(s)
+            );
+        }
+        out.push('\n');
+    }
+
+    if !goals.observe.is_empty() {
+        let _ = writeln!(out, "## Observability\n");
+        let _ = writeln!(out, "| Metric | Rule | Status |");
+        let _ = writeln!(out, "| --- | --- | --- |");
+        for o in &goals.observe {
+            let s = status(&o.metric, o.op, o.threshold, metrics);
+            let _ = writeln!(
+                out,
+                "| {} (`{}`) | `{} {}` | {} |",
+                o.name,
+                o.metric,
+                op_symbol(o.op),
+                o.threshold,
+                glyph(s)
+            );
+        }
+        out.push('\n');
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,5 +270,46 @@ threshold = 80
         m.insert("coverage_pct".to_string(), 70.0);
         assert_eq!(status("fmt_violations", Op::Eq, 0, &m), Status::Green);
         assert_eq!(status("coverage_pct", Op::Gte, 80, &m), Status::Red);
+    }
+
+    #[test]
+    fn renders_phase_gates_and_observability() {
+        let goals = parse(
+            r#"
+[phase]
+id = "A1"
+title = "Goals & gates"
+[[milestone]]
+id = "m1"
+title = "done thing"
+done = true
+[[milestone]]
+id = "m2"
+title = "todo thing"
+done = false
+[[gate]]
+name = "fmt"
+metric = "fmt_violations"
+op = "eq"
+threshold = 0
+[[observe]]
+name = "coverage"
+metric = "coverage_pct"
+op = "gte"
+threshold = 80
+"#,
+        )
+        .unwrap();
+        let mut m = Metrics::new();
+        m.insert("fmt_violations".to_string(), 0.0); // coverage_pct absent → Pending
+        let md = render_markdown(&goals, &m);
+        assert!(md.contains("# Phase A1 — Goals & gates"), "{md}");
+        assert!(md.contains("- [x] done thing"), "{md}");
+        assert!(md.contains("- [ ] todo thing"), "{md}");
+        assert!(md.contains("## Hard gates"), "{md}");
+        assert!(md.contains("fmt"), "{md}");
+        assert!(md.contains("✅"), "{md}"); // fmt is green
+        assert!(md.contains("## Observability"), "{md}");
+        assert!(md.contains("⏳"), "{md}"); // coverage is pending
     }
 }
