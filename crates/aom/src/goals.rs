@@ -1,4 +1,4 @@
-//! Goals: safe, declarative checks over the configuration (ADR-0009).
+//! Goals: safe, declarative checks over the configuration (ADR: goals-safe-declarative-checks).
 //!
 //! Every check is a pure function of the [`ConfigTree`] — no shell, no I/O. A
 //! `hard_gate` goal blocks the run when its check fails; an `observability` goal

@@ -1,10 +1,10 @@
 //! Per-agent rendering.
 //!
 //! An [`Adapter`] turns the ordered domains of a profile into one or more output
-//! files for a target agent (ADR-0006: output is a *set of files*, not a single
+//! files for a target agent (ADR: adapter-output-model: output is a *set of files*, not a single
 //! string). Adapters declare which gateable [`Feature`]s they support; the engine
 //! and adapters degrade gracefully — with a recorded warning — when a domain asks
-//! for a feature the target cannot honor (ADR-0007).
+//! for a feature the target cannot honor (ADR: feature-gating-graceful-degradation).
 
 pub mod claude;
 pub mod cursor;

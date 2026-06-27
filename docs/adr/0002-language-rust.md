@@ -30,6 +30,6 @@ Zig.
 
 - Slower to author and longer compile times than Go/TS.
 - Smaller contributor pool than Go for a devtool — acceptable because adoption
-  is not the goal (see ADR-0001).
+  is not the goal (see ADR: positioning-and-why-build).
 - Go would have eased multi-ecosystem distribution (`ai-rulez`'s approach);
   deferred, not needed for a learning artifact.

@@ -1,5 +1,5 @@
 //! Parse a `harness.toml` string/file into a [`Manifest`], mapping TOML errors
-//! to a pointed `miette` diagnostic (ADR-0005).
+//! to a pointed `miette` diagnostic (ADR: error-handling-miette).
 
 use std::path::Path;
 

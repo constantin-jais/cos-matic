@@ -42,7 +42,7 @@ On write, for each target path:
 ## Consequences
 
 - The lockfile is committed to version control; it is the source of truth for
-  drift detection (ADR-0005 / Phase 5) as well as clobber protection.
+  drift detection (ADR: error-handling-miette / Phase 5) as well as clobber protection.
 - Hashes and lockfile paths are repo-relative; never absolute/machine-local.
 - Trade-off accepted: the file↔hash link is not visible _inside_ each generated
   file. Mitigated by the lockfile being small, human-readable TOML.

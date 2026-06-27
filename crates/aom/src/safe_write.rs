@@ -1,5 +1,5 @@
 //! Safe-write: the guarantee that a generated file you hand-edit is never
-//! silently clobbered (ADR-0004).
+//! silently clobbered (ADR: safe-write-sentinel-lockfile).
 //!
 //! For each target path we compare three hashes: the lock's recorded hash, the
 //! on-disk file's hash, and the freshly rendered content's hash.
