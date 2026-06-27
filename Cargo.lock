@@ -22,7 +22,6 @@ name = "agent-o-matic"
 version = "0.0.0"
 dependencies = [
  "blake3",
- "clap",
  "miette",
  "serde",
  "serde_json",
@@ -79,6 +78,15 @@ dependencies = [
  "anstyle",
  "once_cell_polyfill",
  "windows-sys",
+]
+
+[[package]]
+name = "aom-cli"
+version = "0.0.0"
+dependencies = [
+ "agent-o-matic",
+ "clap",
+ "miette",
 ]
 
 [[package]]
