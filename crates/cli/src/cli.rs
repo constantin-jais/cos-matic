@@ -31,4 +31,36 @@ pub enum Command {
         #[arg(long)]
         force: bool,
     },
+
+    /// Goals & metrics reporting.
+    Goals {
+        #[command(subcommand)]
+        command: GoalsCommand,
+    },
+
+    /// Run the blocking gate-wall.
+    Gate {
+        #[command(subcommand)]
+        command: GateCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum GoalsCommand {
+    /// Render a Markdown report of the phase, milestones, gates and observability.
+    Report {
+        /// Path to the goals file.
+        #[arg(short, long, default_value = "goals.toml")]
+        config: PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum GateCommand {
+    /// Run fmt + clippy + tests and exit non-zero on any red hard gate.
+    Run {
+        /// Path to the goals file declaring the hard gates.
+        #[arg(short, long, default_value = "goals.toml")]
+        config: PathBuf,
+    },
 }

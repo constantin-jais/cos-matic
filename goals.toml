@@ -1,0 +1,55 @@
+# Dogfood: the harness measures itself. `aom goals report` renders this;
+# `aom gate run` enforces the hard gates below.
+
+[phase]
+id = "A1"
+title = "Goals & gates"
+
+[[milestone]]
+id = "schema"
+title = "goals.toml schema + parse"
+done = true
+
+[[milestone]]
+id = "evaluate"
+title = "pure gate evaluation (evaluate + status)"
+done = true
+
+[[milestone]]
+id = "report"
+title = "markdown report"
+done = true
+
+[[milestone]]
+id = "gate-engine"
+title = "gate engine with CheckRunner DI"
+done = true
+
+[[milestone]]
+id = "cli"
+title = "aom goals report + aom gate run"
+done = true
+
+[[gate]]
+name = "fmt"
+metric = "fmt_violations"
+op = "eq"
+threshold = 0
+
+[[gate]]
+name = "clippy"
+metric = "clippy_violations"
+op = "eq"
+threshold = 0
+
+[[gate]]
+name = "tests"
+metric = "tests_failed"
+op = "eq"
+threshold = 0
+
+[[observe]]
+name = "coverage"
+metric = "coverage_pct"
+op = "gte"
+threshold = 80

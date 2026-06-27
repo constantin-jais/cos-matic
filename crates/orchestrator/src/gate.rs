@@ -1,5 +1,8 @@
 //! The gate-wall: run the configured hard-gate checks and decide pass/fail.
 
+use std::path::PathBuf;
+use std::process::Command;
+
 use crate::goals::{Goals, Metrics, Status, status};
 
 /// Runs named checks (`"fmt"`, `"clippy"`, `"tests"`). Abstracted so the gate
@@ -19,6 +22,23 @@ pub fn metric_for(check: &str) -> &'static str {
         "clippy" => "clippy_violations",
         "tests" => "tests_failed",
         _ => "unknown_violations",
+    }
+}
+
+/// The `cargo` arguments for a named check (an empty slice for an unknown one).
+pub fn check_command(check: &str) -> &'static [&'static str] {
+    match check {
+        "fmt" => &["fmt", "--all", "--check"],
+        "clippy" => &[
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings",
+        ],
+        "tests" => &["test", "--workspace"],
+        _ => &[],
     }
 }
 
@@ -63,6 +83,27 @@ pub fn run(goals: &Goals, runner: &dyn CheckRunner) -> GateReport {
         rows,
         all_green,
         markdown,
+    }
+}
+
+/// The real [`CheckRunner`]: shells out to `cargo` in `repo_root`.
+pub struct CargoRunner {
+    /// The directory `cargo` is invoked in.
+    pub repo_root: PathBuf,
+}
+
+impl CheckRunner for CargoRunner {
+    fn run_check(&self, check: &str) -> bool {
+        let args = check_command(check);
+        if args.is_empty() {
+            return false;
+        }
+        Command::new("cargo")
+            .args(args)
+            .current_dir(&self.repo_root)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
     }
 }
 
@@ -138,5 +179,15 @@ threshold = 0
         assert_eq!(m["fmt_violations"], 0.0);
         assert_eq!(m["clippy_violations"], 0.0);
         assert_eq!(m["tests_failed"], 1.0);
+    }
+
+    #[test]
+    fn check_command_maps_known_and_unknown() {
+        assert_eq!(
+            check_command("fmt").to_vec(),
+            vec!["fmt", "--all", "--check"]
+        );
+        assert_eq!(check_command("tests").to_vec(), vec!["test", "--workspace"]);
+        assert!(check_command("nope").is_empty());
     }
 }
