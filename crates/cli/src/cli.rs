@@ -69,6 +69,17 @@ pub enum Command {
         #[arg(long)]
         repo: Option<String>,
     },
+
+    /// Autonomously merge a branch — only with attached green evidence (never red).
+    Automerge {
+        /// Branch to gate-and-merge (e.g. `aom/fix/issue-8`).
+        #[arg(long)]
+        branch: String,
+
+        /// Target repo `owner/name` (defaults to the `origin` remote).
+        #[arg(long)]
+        repo: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
