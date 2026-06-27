@@ -8,13 +8,3 @@
   running the verification and confirming the output.
 - When fixing a bug, first add a test that reproduces it (red), then fix it
   (green). The test prevents the regression from returning.
-
-# Security
-
-- Validate and sanitize every external input at the boundary.
-- Never log secrets or personally identifiable information.
-
-# Code Style
-
-- Explicit is better than implicit; readability beats cleverness.
-- Prefer duplication over the wrong abstraction (rule of three).

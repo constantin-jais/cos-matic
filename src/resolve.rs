@@ -33,6 +33,9 @@ pub fn resolve(
     let mut out = Vec::new();
     let mut on_stack: Vec<PathBuf> = Vec::new();
     let mut done: HashSet<PathBuf> = HashSet::new();
+    // Built-ins are de-duplicated by name across the whole include graph, so
+    // pulling the same one from two manifests is a no-op rather than a clash.
+    let mut library_added: HashSet<String> = HashSet::new();
     resolve_rec(
         project_root,
         root_manifest_path,
@@ -40,8 +43,27 @@ pub fn resolve(
         &mut out,
         &mut on_stack,
         &mut done,
+        &mut library_added,
     )?;
     Ok(out)
+}
+
+/// Add a built-in domain once (later duplicates are no-ops). `base_dir` is unused
+/// for the inline content but kept for the uniform `DomainSource` shape.
+fn add_builtin(
+    name: &str,
+    base_dir: &Path,
+    out: &mut Vec<DomainSource>,
+    library_added: &mut HashSet<String>,
+) -> Result<()> {
+    if !library_added.insert(name.to_string()) {
+        return Ok(());
+    }
+    out.push(DomainSource {
+        domain: crate::library::lookup(name)?,
+        base_dir: base_dir.to_path_buf(),
+    });
+    Ok(())
 }
 
 fn canonical_key(path: &Path) -> PathBuf {
@@ -64,6 +86,7 @@ fn resolve_rec(
     out: &mut Vec<DomainSource>,
     on_stack: &mut Vec<PathBuf>,
     done: &mut HashSet<PathBuf>,
+    library_added: &mut HashSet<String>,
 ) -> Result<()> {
     let key = canonical_key(manifest_path);
 
@@ -95,11 +118,28 @@ fn resolve_rec(
         });
     }
 
+    // `builtins = [...]` is sugar for `library://<name>` includes (ADR-0008).
+    for name in &manifest.package.builtins {
+        add_builtin(name, &base_dir, out, library_added)?;
+    }
+
     for include in &manifest.includes {
+        if let Some(name) = include.path.strip_prefix("library://") {
+            add_builtin(name, &base_dir, out, library_added)?;
+            continue;
+        }
         let inc_path = resolve_within(project_root, &base_dir, &include.path)?;
         let display = display_relative(project_root, &inc_path);
         let inc_manifest = parse_file(&inc_path, &display)?;
-        resolve_rec(project_root, &inc_path, &inc_manifest, out, on_stack, done)?;
+        resolve_rec(
+            project_root,
+            &inc_path,
+            &inc_manifest,
+            out,
+            on_stack,
+            done,
+            library_added,
+        )?;
     }
 
     on_stack.pop();
@@ -215,5 +255,66 @@ mod tests {
         let m = parse_str("a.toml", &fs::read_to_string(&a_path).unwrap()).unwrap();
         let err = resolve(root, &a_path, &m).unwrap_err();
         assert!(matches!(err, Error::Io { .. }), "got {err:?}");
+    }
+
+    fn resolve_src(root: &Path, body: &str) -> Result<Vec<DomainSource>> {
+        let p = write(root, "harness.toml", body);
+        let m = parse_str("harness.toml", &fs::read_to_string(&p).unwrap()).unwrap();
+        resolve(root, &p, &m)
+    }
+
+    #[test]
+    fn builtins_are_desugared_into_domains() {
+        let tmp = tempfile::tempdir().unwrap();
+        let domains = resolve_src(
+            tmp.path(),
+            "[package]\nname=\"x\"\nbuiltins=[\"four-axes\",\"tdd\"]\n",
+        )
+        .unwrap();
+        let names: Vec<&str> = domains.iter().map(|d| d.domain.name.as_str()).collect();
+        assert!(names.contains(&"four-axes"));
+        assert!(names.contains(&"tdd"));
+    }
+
+    #[test]
+    fn library_include_adds_a_builtin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let domains = resolve_src(
+            tmp.path(),
+            "[package]\nname=\"x\"\n[[includes]]\npath=\"library://response-blocks\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            domains
+                .iter()
+                .filter(|d| d.domain.name == "response-blocks")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn the_same_builtin_pulled_twice_is_deduplicated() {
+        let tmp = tempfile::tempdir().unwrap();
+        let domains = resolve_src(
+            tmp.path(),
+            "[package]\nname=\"x\"\nbuiltins=[\"four-axes\"]\n[[includes]]\npath=\"library://four-axes\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            domains
+                .iter()
+                .filter(|d| d.domain.name == "four-axes")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn unknown_builtin_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let err =
+            resolve_src(tmp.path(), "[package]\nname=\"x\"\nbuiltins=[\"nope\"]\n").unwrap_err();
+        assert!(matches!(err, Error::UnknownBuiltin { .. }));
     }
 }

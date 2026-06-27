@@ -297,3 +297,33 @@ profile = "default"
     assert!(matches!(err, Error::Clobber { .. }), "got {err:?}");
     assert!(root.join(".cursor/rules/beta.mdc").exists());
 }
+
+#[test]
+fn builtins_inject_embedded_library_content() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("harness.toml"),
+        r#"
+[package]
+name = "lib-demo"
+builtins = ["four-axes"]
+
+[[profiles]]
+name = "default"
+domains = ["four-axes"]
+
+[[targets]]
+name = "agents"
+adapter = "universal"
+output_file = "AGENTS.md"
+profile = "default"
+"#,
+    )
+    .unwrap();
+    let manifest = root.join("harness.toml");
+    generate::run(&opts(&manifest, false, false)).unwrap();
+    // The built-in domain's content (authored only inside the binary) appears.
+    let agents = fs::read_to_string(root.join("AGENTS.md")).unwrap();
+    assert!(agents.contains("Decision Axes"), "got: {agents}");
+}

@@ -31,4 +31,22 @@ pub enum Command {
         #[arg(long)]
         force: bool,
     },
+
+    /// Inspect the embedded content library.
+    Library {
+        #[command(subcommand)]
+        action: LibraryAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum LibraryAction {
+    /// List every built-in domain.
+    List,
+
+    /// Print a built-in domain's content.
+    Show {
+        /// Built-in name (see `aom library list`).
+        name: String,
+    },
 }

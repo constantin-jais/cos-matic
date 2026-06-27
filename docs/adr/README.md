@@ -12,3 +12,4 @@ doubles as teaching material. Format: context / decision / consequences.
 | [0005](0005-error-handling-miette.md)               | Error handling: `miette` diagnostics from the start |
 | [0006](0006-adapter-output-model.md)                | Adapter output: a set of files, not one string      |
 | [0007](0007-feature-gating-graceful-degradation.md) | Feature gating + graceful degradation               |
+| [0008](0008-embedded-content-library.md)            | Embedded content library: `builtins` + `library://` |

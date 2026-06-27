@@ -21,6 +21,7 @@ pub mod config;
 pub mod error;
 pub mod generate;
 mod ir;
+pub mod library;
 mod lock;
 mod merge;
 mod paths;
@@ -58,5 +59,17 @@ pub fn run() -> miette::Result<()> {
             }
             Ok(())
         }
+        Command::Library { action } => match action {
+            cli::LibraryAction::List => {
+                for (name, priority, description) in library::catalog() {
+                    println!("{name:<20} (priority {priority:>3})  {description}");
+                }
+                Ok(())
+            }
+            cli::LibraryAction::Show { name } => {
+                print!("{}", library::content(&name)?);
+                Ok(())
+            }
+        },
     }
 }

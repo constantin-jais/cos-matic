@@ -21,10 +21,13 @@ pub struct Manifest {
     pub targets: Vec<Target>,
 }
 
-/// Project-level metadata. Only `name` is load-bearing in Phase 1.
+/// Project-level metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Package {
     pub name: String,
+    /// Built-in domains to include, sugar for `[[includes]] path = "library://<name>"`.
+    #[serde(default)]
+    pub builtins: Vec<String>,
 }
 
 /// A reference to another manifest whose domains are merged in.

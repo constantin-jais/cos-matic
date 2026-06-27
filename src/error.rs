@@ -57,6 +57,14 @@ pub enum Error {
     #[diagnostic(code(aom::missing_content_file))]
     MissingContentFile { name: String, path: String },
 
+    /// A `library://` include or `builtins` entry names no known built-in.
+    #[error("unknown built-in `{name}`")]
+    #[diagnostic(
+        code(aom::unknown_builtin),
+        help("run `aom library list` to see the available built-ins")
+    )]
+    UnknownBuiltin { name: String },
+
     /// `[[includes]]` form a cycle.
     #[error("include cycle detected: {chain}")]
     #[diagnostic(code(aom::include_cycle))]

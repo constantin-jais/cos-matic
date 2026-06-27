@@ -1,5 +1,7 @@
 [package]
 name = "minimal-example"
+# Pull a curated domain straight from the embedded library (ADR-0008).
+builtins = ["tdd"]
 
 [[domains]]
 name = "code-style"
@@ -13,7 +15,7 @@ content_file = "domains/security.md"
 
 [[profiles]]
 name = "default"
-domains = ["code-style", "security"]
+domains = ["code-style", "security", "tdd"]
 
 [[targets]]
 name = "agents-md"

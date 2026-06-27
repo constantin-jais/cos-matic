@@ -3,5 +3,6 @@ version = 1
 [files]
 ".cursor/rules/code-style.mdc" = "3cbce44d3ec2bc7760329caf4fa95aa3b1013465ea236fb19881ada142f12c80"
 ".cursor/rules/security.mdc" = "fdec3a85e3a01f174661f4709083a6750ac87dd7874aaca0000a5432165437f0"
-"AGENTS.md" = "5cb7ca6c357d8855a499dafd201d759099a83b4b2fd21c355c0e0e8e2f2143ad"
-"CLAUDE.md" = "5cb7ca6c357d8855a499dafd201d759099a83b4b2fd21c355c0e0e8e2f2143ad"
+".cursor/rules/tdd.mdc" = "4627fa6c18a581af47ed13fd6d932a6509727e3d3548eaadde17059a264ef279"
+"AGENTS.md" = "f296524acd6b01f8b3133b2aba658dca19023c75571c628e6e91a1c3fe8d0c04"
+"CLAUDE.md" = "f296524acd6b01f8b3133b2aba658dca19023c75571c628e6e91a1c3fe8d0c04"
