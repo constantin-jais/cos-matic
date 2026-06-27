@@ -109,6 +109,11 @@ pub enum Command {
         /// Target repo `owner/name` (defaults to the `origin` remote).
         #[arg(long)]
         repo: Option<String>,
+
+        /// Trace what each stage would do — real read-only checks (the merge
+        /// gate), but no fix, no merge, no deploy.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
