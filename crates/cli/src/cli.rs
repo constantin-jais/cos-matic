@@ -80,6 +80,17 @@ pub enum Command {
         #[arg(long)]
         repo: Option<String>,
     },
+
+    /// Canary-deploy a target, smoke-test it, and promote or auto-rollback.
+    Deploy {
+        /// Version/ref to deploy (exported to the deploy command as `AOM_TARGET`).
+        #[arg(long)]
+        target: String,
+
+        /// Target repo `owner/name` (defaults to the `origin` remote).
+        #[arg(long)]
+        repo: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

@@ -8,7 +8,7 @@ use miette::{IntoDiagnostic, miette};
 use agent_o_matic::generate;
 use cli::{Cli, Command, IncidentCommand, LibraryAction};
 use orchestrator::forge::{self, GithubForge, RepoId};
-use orchestrator::{automerge, dispatch, incident};
+use orchestrator::{automerge, deploy, dispatch, incident};
 
 fn main() -> miette::Result<()> {
     let cli = Cli::parse();
@@ -185,6 +185,54 @@ fn main() -> miette::Result<()> {
                 }
                 automerge::MergeOutcome::Merged { reference } => {
                     println!("merged: {reference}");
+                    Ok(())
+                }
+            }
+        }
+        Command::Deploy { target, repo } => {
+            let repo_id = resolve_repo(repo.as_deref())?;
+            let cmd = |key: &str| -> miette::Result<String> {
+                std::env::var(key)
+                    .map_err(|_| miette!("set {key} (the deploy is configured by command)"))
+            };
+            let deployer = deploy::CommandDeployer {
+                canary_cmd: cmd("AOM_DEPLOY_CANARY")?,
+                promote_cmd: cmd("AOM_DEPLOY_PROMOTE")?,
+                rollback_cmd: cmd("AOM_DEPLOY_ROLLBACK")?,
+            };
+            let smoke = deploy::CommandSmoke {
+                smoke_cmd: cmd("AOM_DEPLOY_SMOKE")?,
+            };
+            let env = deploy::DeployEnvelope {
+                enabled: std::env::var_os("AOM_DEPLOY_DISABLED").is_none(),
+                allowlist: vec![repo_id.clone()],
+                max_deploys: 1,
+            };
+            let req = deploy::DeployRequest {
+                target,
+                repo: repo_id.clone(),
+            };
+            let outcome = deploy::deploy(&deployer, &smoke, &env, &req, 0).into_diagnostic()?;
+
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .into_diagnostic()?
+                .as_secs();
+            if let Some(dir) = incident::default_journal_dir() {
+                deploy::append_audit(&dir, &req, &outcome, ts).into_diagnostic()?;
+            }
+
+            match outcome {
+                deploy::DeployOutcome::Refused { reason } => {
+                    eprintln!("refused: {reason}");
+                    std::process::exit(2);
+                }
+                deploy::DeployOutcome::RolledBack { reason } => {
+                    eprintln!("rolled back: {reason}");
+                    std::process::exit(1);
+                }
+                deploy::DeployOutcome::Promoted { reference } => {
+                    println!("promoted: {reference}");
                     Ok(())
                 }
             }
