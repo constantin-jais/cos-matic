@@ -1,0 +1,4 @@
+# Code Style
+
+- Explicit is better than implicit; readability beats cleverness.
+- Prefer duplication over the wrong abstraction (rule of three).

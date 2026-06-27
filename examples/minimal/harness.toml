@@ -1,0 +1,22 @@
+[package]
+name = "minimal-example"
+
+[[domains]]
+name = "code-style"
+priority = 5
+content_file = "domains/code-style.md"
+
+[[domains]]
+name = "security"
+priority = 10
+content_file = "domains/security.md"
+
+[[profiles]]
+name = "default"
+domains = ["code-style", "security"]
+
+[[targets]]
+name = "agents-md"
+adapter = "universal"
+output_file = "AGENTS.md"
+profile = "default"

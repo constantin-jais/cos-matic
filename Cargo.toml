@@ -28,7 +28,7 @@ thiserror = "2"
 toml = "0.8"
 
 [dev-dependencies]
-# Property-/snapshot-friendly assertions can come later; std is enough for Phase 1.
+tempfile = "3"
 
 [profile.release]
 strip = true

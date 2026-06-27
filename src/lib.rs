@@ -9,10 +9,51 @@
 //! This crate is built clean-room as a learning/teaching artifact: every
 //! non-obvious decision is recorded in `docs/adr/`, and the tests are the
 //! executable specification.
+//!
+//! ## Pipeline
+//!
+//! `parse` → `resolve` includes → build `ir` → `merge` by priority →
+//! `render` per adapter → `safe_write` (guarded by the `lock`) → `audit`.
 
-use miette::Result;
+mod audit;
+mod cli;
+pub mod config;
+pub mod error;
+pub mod generate;
+mod ir;
+mod lock;
+mod merge;
+mod paths;
+pub mod render;
+mod resolve;
+mod safe_write;
 
-/// Entry point used by the `aom` binary. Phase 0 placeholder.
-pub fn run() -> Result<()> {
-    Ok(())
+pub use error::{Error, Result};
+
+use clap::Parser;
+use cli::{Cli, Command};
+
+/// Entry point used by the `aom` binary: parse args, dispatch, print a report.
+pub fn run() -> miette::Result<()> {
+    let cli = Cli::parse();
+    match cli.command {
+        Command::Generate {
+            manifest,
+            check,
+            force,
+        } => {
+            let report = generate::run(&generate::Options {
+                manifest_path: manifest,
+                check,
+                force,
+            })?;
+            for file in &report.files {
+                println!("{:>9}  {}", file.action.label(), file.path);
+            }
+            if check {
+                println!("ok: {} target(s) up to date", report.files.len());
+            }
+            Ok(())
+        }
+    }
 }
