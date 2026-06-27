@@ -14,3 +14,4 @@ doubles as teaching material. Format: context / decision / consequences.
 | [0007](0007-feature-gating-graceful-degradation.md) | Feature gating + graceful degradation                       |
 | [0008](0008-embedded-content-library.md)            | Embedded content library: `builtins` + `library://`         |
 | [0009](0009-goals-safe-declarative-checks.md)       | Goals: safe declarative checks (hard-gate vs observability) |
+| [0010](0010-drift-as-ci-gate.md)                    | Drift detection as a CI gate (+ dogfood)                    |

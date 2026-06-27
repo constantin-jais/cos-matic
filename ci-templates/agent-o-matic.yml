@@ -1,0 +1,29 @@
+# Reusable CI gate for projects that use Agent-O-Matic (ADR-0010).
+#
+# Copy this to `.github/workflows/agent-o-matic.yml` in your repository. It fails
+# the build if your committed agent configs have drifted from `harness.toml`, or
+# if a hard-gate goal is not met.
+name: agent-o-matic
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install agent-o-matic
+        # Once published to crates.io this becomes: cargo install agent-o-matic
+        run: cargo install --locked --git https://github.com/constantin-jais/Agent-O-Matic
+
+      # `generate --check` also enforces hard gates, but a dedicated `goals` step
+      # gives a clean, separate report (and surfaces observability metrics).
+      - name: Goals
+        run: aom goals
+
+      - name: Drift gate (committed outputs must match the source)
+        run: aom generate --check
