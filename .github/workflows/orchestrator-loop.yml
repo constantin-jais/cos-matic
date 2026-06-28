@@ -34,7 +34,8 @@ permissions:
   contents: write # publish: push the fix branch
   issues: write # incident -> issue, close
   pull-requests: write # publish/automerge: open + merge the PR
-  checks: read # automerge gate: read the PR's check status via github.token
+  checks: read # automerge gate: read the PR's check runs via github.token
+  statuses: read # ditto: gh's statusCheckRollup also touches commit statuses
 
 # Never overlap autonomous runs.
 concurrency:
