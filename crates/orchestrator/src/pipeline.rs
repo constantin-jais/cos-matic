@@ -253,8 +253,12 @@ impl Stages for RealStages {
 
     fn publish(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError> {
         // Push the local fix branch, then open a PR so the gate has a target.
+        // Force: the fix branch is the orchestrator's own throwaway, recreated
+        // fresh off HEAD each attempt, so it must overwrite any stale branch a
+        // prior (failed) attempt left on the remote — otherwise the fresh branch
+        // is not a fast-forward and the push is rejected.
         let pushed = Command::new("git")
-            .args(["push", "-u", "origin", branch])
+            .args(["push", "--force", "-u", "origin", branch])
             .current_dir(&self.repo_root)
             .status()
             .map_err(|e| LoopError(format!("git push: {e}")))?;
