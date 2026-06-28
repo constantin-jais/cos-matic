@@ -263,29 +263,67 @@ impl GhChecksGate {
             .collect();
         Ok(classify(&checks))
     }
+
+    /// Is there an open PR for the branch? Lets the gate fail closed at once on a
+    /// branch with no PR rather than polling for checks that will never come.
+    fn pr_exists(&self, req: &MergeRequest) -> Result<bool, MergeError> {
+        let repo = format!("{}/{}", req.repo.owner, req.repo.name);
+        let mut cmd = Command::new("gh");
+        cmd.args([
+            "pr",
+            "list",
+            "--repo",
+            &repo,
+            "--head",
+            &req.branch,
+            "--state",
+            "open",
+            "--json",
+            "number",
+        ]);
+        if let Ok(tok) = std::env::var("AOM_CHECKS_TOKEN")
+            && !tok.is_empty()
+        {
+            cmd.env("GH_TOKEN", tok);
+        }
+        let out = cmd
+            .output()
+            .map_err(|e| MergeError(format!("spawn gh: {e}")))?;
+        let count = serde_json::from_slice::<serde_json::Value>(&out.stdout)
+            .ok()
+            .and_then(|v| v.as_array().map(|a| a.len()))
+            .unwrap_or(0);
+        Ok(count > 0)
+    }
 }
 
 impl Gate for GhChecksGate {
     fn verdict(&self, req: &MergeRequest) -> Result<Verdict, MergeError> {
+        // No open PR for the branch -> nothing to gate; fail closed at once rather
+        // than polling to the timeout. Only reachable from a standalone automerge;
+        // the loop always publishes a PR first.
+        if !self.pr_exists(req)? {
+            eprintln!("[gate] {}: no open PR -> Unknown", req.branch);
+            return Ok(Verdict::Unknown);
+        }
         let deadline = Instant::now() + self.timeout;
-        loop {
-            let state = self.poll_once(req)?;
-            // The gate polls a live PR; a one-line trace per poll makes a stalled
-            // or never-green gate diagnosable from the run log.
-            eprintln!("[gate] {}: {state:?}", req.branch);
-            match state {
-                PollState::Settled(v) => return Ok(v),
+        let verdict = loop {
+            match self.poll_once(req)? {
+                PollState::Settled(v) => break v,
                 // Pending, or checks not registered yet: wait for them to settle,
                 // bounded by the timeout (then fail-closed to Unknown).
                 PollState::NoChecks | PollState::Pending => {
                     if Instant::now() >= deadline {
-                        eprintln!("[gate] {}: timed out -> Unknown", req.branch);
-                        return Ok(Verdict::Unknown);
+                        break Verdict::Unknown;
                     }
                     std::thread::sleep(self.interval);
                 }
             }
-        }
+        };
+        // One line per gate decision (not per poll) — enough to follow an
+        // autonomous run without flooding the log.
+        eprintln!("[gate] {}: {verdict:?}", req.branch);
+        Ok(verdict)
     }
 }
 
@@ -294,7 +332,6 @@ pub struct GhMerger;
 
 impl Merger for GhMerger {
     fn merge(&self, req: &MergeRequest) -> Result<String, MergeError> {
-        eprintln!("[merge] gh pr merge {} --rebase", req.branch);
         let out = Command::new("gh")
             .args(["pr", "merge", &req.branch, "--rebase"])
             .output()
