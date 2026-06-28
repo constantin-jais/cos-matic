@@ -170,8 +170,10 @@ enum PollState {
     Settled(Verdict),
     /// At least one check is still running — worth waiting for.
     Pending,
-    /// No PR, or no checks at all — nothing to wait for.
+    /// A PR exists but has no checks yet — they may still register; worth waiting.
     NoChecks,
+    /// No PR at all — nothing to wait for (terminal).
+    NoPr,
 }
 
 /// Classify a set of `(name, bucket)` checks into a poll state. Pure, so the
@@ -227,25 +229,24 @@ impl GhChecksGate {
             .args(["pr", "checks", &req.branch, "--json", "name,bucket"])
             .output()
             .map_err(|e| MergeError(format!("spawn gh: {e}")))?;
-        if !out.status.success() {
-            // No PR / no checks yet -> nothing to wait for. Fail-closed.
-            return Ok(PollState::NoChecks);
-        }
-        let v: serde_json::Value = serde_json::from_slice(&out.stdout)
-            .map_err(|e| MergeError(format!("parse gh output: {e}")))?;
-        let checks: Vec<(String, String)> = v
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .map(|c| {
-                        (
-                            c["name"].as_str().unwrap_or("?").to_string(),
-                            c["bucket"].as_str().unwrap_or("").to_string(),
-                        )
-                    })
-                    .collect()
+        // `gh pr checks` exits non-zero when checks are merely failing (1) or
+        // pending (8) — that is status, not error — so classify from the JSON,
+        // never the exit code. A body that is not a JSON array means there is no
+        // PR to check.
+        let Ok(serde_json::Value::Array(arr)) =
+            serde_json::from_slice::<serde_json::Value>(&out.stdout)
+        else {
+            return Ok(PollState::NoPr);
+        };
+        let checks: Vec<(String, String)> = arr
+            .iter()
+            .map(|c| {
+                (
+                    c["name"].as_str().unwrap_or("?").to_string(),
+                    c["bucket"].as_str().unwrap_or("").to_string(),
+                )
             })
-            .unwrap_or_default();
+            .collect();
         Ok(classify(&checks))
     }
 }
@@ -256,10 +257,11 @@ impl Gate for GhChecksGate {
         loop {
             match self.poll_once(req)? {
                 PollState::Settled(v) => return Ok(v),
-                PollState::NoChecks => return Ok(Verdict::Unknown),
-                PollState::Pending => {
+                PollState::NoPr => return Ok(Verdict::Unknown),
+                // Pending, or a PR whose checks have not registered yet: wait for
+                // them to settle, bounded by the timeout (then fail-closed).
+                PollState::NoChecks | PollState::Pending => {
                     if Instant::now() >= deadline {
-                        // Still not settled at the deadline -> fail-closed.
                         return Ok(Verdict::Unknown);
                     }
                     std::thread::sleep(self.interval);
