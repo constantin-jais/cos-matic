@@ -225,13 +225,22 @@ impl Default for GhChecksGate {
 
 impl GhChecksGate {
     fn poll_once(&self, req: &MergeRequest) -> Result<PollState, MergeError> {
+        // Read check runs via the REST API, not `gh pr checks`: the latter uses
+        // the statusCheckRollup GraphQL, which a CI runner's github.token cannot
+        // resolve (it returns nothing even with checks+statuses:read — proven by
+        // a live run). The REST endpoint reads fine with checks:read, handles a
+        // branch name containing slashes, and the jq maps each run to the same
+        // pass/fail/pending/skipping buckets `classify` already understands.
+        let path = format!(
+            "repos/{}/{}/commits/{}/check-runs",
+            req.repo.owner, req.repo.name, req.branch
+        );
+        let jq = r#".check_runs[] | .name + "\t" + (if .status != "completed" then "pending" elif (.conclusion == "success" or .conclusion == "neutral") then "pass" elif .conclusion == "skipped" then "skipping" else "fail" end)"#;
         let mut cmd = Command::new("gh");
-        cmd.args(["pr", "checks", &req.branch, "--json", "name,bucket"]);
-        // Reading checks needs a different scope than writing them: let the
-        // caller hand the gate a dedicated read-only token (e.g. a CI runner's
-        // github.token) via AOM_CHECKS_TOKEN, so the write token (which pushes,
-        // opens, and merges the PR) need not also carry a Checks scope. `gh`
-        // prefers GH_TOKEN over GITHUB_TOKEN, so this only affects this call.
+        cmd.args(["api", &path, "--jq", jq]);
+        // A dedicated read-only token (the runner's github.token via
+        // AOM_CHECKS_TOKEN) lets the write token skip a Checks scope; gh prefers
+        // GH_TOKEN over GITHUB_TOKEN, so this only affects this call.
         if let Ok(tok) = std::env::var("AOM_CHECKS_TOKEN")
             && !tok.is_empty()
         {
@@ -240,22 +249,16 @@ impl GhChecksGate {
         let out = cmd
             .output()
             .map_err(|e| MergeError(format!("spawn gh: {e}")))?;
-        // `gh pr checks` exits non-zero when checks are merely failing (1) or
-        // pending (8) — that is status, not error — so classify from the JSON,
-        // never the exit code. A non-array body means no checks are readable yet
-        // (none registered, or "no checks reported" right after a push): wait.
-        let Ok(serde_json::Value::Array(arr)) =
-            serde_json::from_slice::<serde_json::Value>(&out.stdout)
-        else {
+        if !out.status.success() {
+            // No commit/branch yet, or the API errored: nothing readable -> wait.
             return Ok(PollState::NoChecks);
-        };
-        let checks: Vec<(String, String)> = arr
-            .iter()
-            .map(|c| {
-                (
-                    c["name"].as_str().unwrap_or("?").to_string(),
-                    c["bucket"].as_str().unwrap_or("").to_string(),
-                )
+        }
+        let body = String::from_utf8_lossy(&out.stdout);
+        let checks: Vec<(String, String)> = body
+            .lines()
+            .filter_map(|l| {
+                l.split_once('\t')
+                    .map(|(n, b)| (n.to_string(), b.to_string()))
             })
             .collect();
         Ok(classify(&checks))
