@@ -277,7 +277,18 @@ impl Stages for RealStages {
             .current_dir(&self.repo_root)
             .status()
             .map_err(|e| LoopError(format!("gh pr create: {e}")))?;
-        Ok(pr.success())
+        if pr.success() {
+            return Ok(true);
+        }
+        // `gh pr create` fails when a PR for this branch already exists (e.g. a
+        // retry of an earlier attempt). The gate only needs an open PR, so reuse
+        // it: report success if one is already there.
+        let exists = Command::new("gh")
+            .args(["pr", "view", branch])
+            .current_dir(&self.repo_root)
+            .status()
+            .map_err(|e| LoopError(format!("gh pr view: {e}")))?;
+        Ok(exists.success())
     }
 
     fn automerge(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError> {
