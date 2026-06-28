@@ -153,10 +153,13 @@ fn dispatch_kill_switch_refuses_before_any_agent() {
 
 #[test]
 fn automerge_kill_switch_refuses_before_any_merge() {
+    // The automerge arm builds the GitHub forge (which reads a token) before the
+    // envelope, so a token must be present; the kill-switch then refuses before
+    // any API call.
     let out = run_killed(
         &["automerge", "--branch", "x", "--repo", "o/n"],
         "AOM_AUTOMERGE_DISABLED",
-        &[],
+        &[("GITHUB_TOKEN", "ghp_test_dummy")],
     );
     assert_refused(&out, "automerge");
 }
@@ -180,10 +183,13 @@ fn deploy_kill_switch_refuses_before_any_command() {
 
 #[test]
 fn loop_kill_switch_refuses_before_any_stage() {
+    // The loop arm builds the GitHub forge (which reads a token) before the
+    // envelope, so a token must be present; the kill-switch then refuses before
+    // any stage runs.
     let out = run_killed(
         &["loop", "--issue", "1", "--title", "x", "--repo", "o/n"],
         "AOM_LOOP_DISABLED",
-        &[],
+        &[("GITHUB_TOKEN", "ghp_test_dummy")],
     );
     assert_refused(&out, "loop");
 }

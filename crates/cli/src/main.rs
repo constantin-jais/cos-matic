@@ -167,14 +167,25 @@ fn main() -> miette::Result<()> {
                 branch,
                 repo: repo_id.clone(),
             };
-            let outcome = automerge::auto_merge(
-                &automerge::GhChecksGate::default(),
-                &automerge::GhMerger,
-                &env,
-                &req,
-                0,
-            )
-            .into_diagnostic()?;
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .into_diagnostic()?;
+            // Build the forge inside the runtime — octocrab's HTTP client needs a
+            // reactor at construction.
+            let outcome = rt
+                .block_on(async {
+                    let forge = GithubForge::from_env().map_err(|e| automerge::MergeError(e.0))?;
+                    automerge::auto_merge(
+                        &automerge::ForgeGate::new(&forge),
+                        &automerge::ForgeMerger::new(&forge),
+                        &env,
+                        &req,
+                        0,
+                    )
+                    .await
+                })
+                .into_diagnostic()?;
 
             let ts = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -262,10 +273,22 @@ fn main() -> miette::Result<()> {
                     "  1. dispatch  -> would create `{branch}` and run a bounded fixer. [skipped]"
                 );
                 println!("  2. publish   -> would push `{branch}` and open a PR. [skipped]");
-                let verdict = automerge::GhChecksGate::default()
-                    .verdict(&automerge::MergeRequest {
-                        branch: branch.clone(),
-                        repo: repo_id.clone(),
+                let rt = tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .into_diagnostic()?;
+                // Build the forge inside the runtime — octocrab's HTTP client
+                // needs a reactor at construction.
+                let verdict = rt
+                    .block_on(async {
+                        let forge =
+                            GithubForge::from_env().map_err(|e| automerge::MergeError(e.0))?;
+                        automerge::ForgeGate::new(&forge)
+                            .verdict(&automerge::MergeRequest {
+                                branch: branch.clone(),
+                                repo: repo_id.clone(),
+                            })
+                            .await
                     })
                     .into_diagnostic()?;
                 let green = matches!(verdict, automerge::Verdict::Green);
@@ -296,14 +319,32 @@ fn main() -> miette::Result<()> {
                 body,
                 repo: repo_id.clone(),
             };
-            let stages = pipeline::RealStages {
-                repo_root: std::env::current_dir().into_diagnostic()?,
-                deploy_canary: std::env::var("AOM_DEPLOY_CANARY").unwrap_or_default(),
-                deploy_promote: std::env::var("AOM_DEPLOY_PROMOTE").unwrap_or_default(),
-                deploy_rollback: std::env::var("AOM_DEPLOY_ROLLBACK").unwrap_or_default(),
-                deploy_smoke: std::env::var("AOM_DEPLOY_SMOKE").unwrap_or_default(),
-            };
-            let outcome = pipeline::run_until_done(&stages, &env, &req).into_diagnostic()?;
+            let repo_root = std::env::current_dir().into_diagnostic()?;
+            let deploy_canary = std::env::var("AOM_DEPLOY_CANARY").unwrap_or_default();
+            let deploy_promote = std::env::var("AOM_DEPLOY_PROMOTE").unwrap_or_default();
+            let deploy_rollback = std::env::var("AOM_DEPLOY_ROLLBACK").unwrap_or_default();
+            let deploy_smoke = std::env::var("AOM_DEPLOY_SMOKE").unwrap_or_default();
+            // The loop core is async (the forge is); block on it once here — the
+            // single async boundary — exactly as the incident command does. The
+            // forge is built inside the runtime: octocrab's HTTP client needs a
+            // reactor at construction.
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .into_diagnostic()?;
+            let outcome = rt
+                .block_on(async {
+                    let stages = pipeline::RealStages {
+                        repo_root,
+                        forge: GithubForge::from_env().map_err(|e| pipeline::LoopError(e.0))?,
+                        deploy_canary,
+                        deploy_promote,
+                        deploy_rollback,
+                        deploy_smoke,
+                    };
+                    pipeline::run_until_done(&stages, &env, &req).await
+                })
+                .into_diagnostic()?;
 
             let ts = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
