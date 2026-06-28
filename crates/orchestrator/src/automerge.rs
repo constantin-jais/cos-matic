@@ -217,8 +217,8 @@ pub struct GhChecksGate {
 impl Default for GhChecksGate {
     fn default() -> Self {
         Self {
-            timeout: Duration::from_secs(600),
-            interval: Duration::from_secs(15),
+            timeout: Duration::from_secs(180),
+            interval: Duration::from_secs(10),
         }
     }
 }
@@ -266,12 +266,17 @@ impl Gate for GhChecksGate {
     fn verdict(&self, req: &MergeRequest) -> Result<Verdict, MergeError> {
         let deadline = Instant::now() + self.timeout;
         loop {
-            match self.poll_once(req)? {
+            let state = self.poll_once(req)?;
+            // The gate polls a live PR; a one-line trace per poll makes a stalled
+            // or never-green gate diagnosable from the run log.
+            eprintln!("[gate] {}: {state:?}", req.branch);
+            match state {
                 PollState::Settled(v) => return Ok(v),
                 // Pending, or checks not registered yet: wait for them to settle,
                 // bounded by the timeout (then fail-closed to Unknown).
                 PollState::NoChecks | PollState::Pending => {
                     if Instant::now() >= deadline {
+                        eprintln!("[gate] {}: timed out -> Unknown", req.branch);
                         return Ok(Verdict::Unknown);
                     }
                     std::thread::sleep(self.interval);
@@ -286,6 +291,7 @@ pub struct GhMerger;
 
 impl Merger for GhMerger {
     fn merge(&self, req: &MergeRequest) -> Result<String, MergeError> {
+        eprintln!("[merge] gh pr merge {} --rebase", req.branch);
         let out = Command::new("gh")
             .args(["pr", "merge", &req.branch, "--rebase"])
             .output()
@@ -296,6 +302,7 @@ impl Merger for GhMerger {
                 String::from_utf8_lossy(&out.stderr).trim()
             )));
         }
+        eprintln!("[merge] {} merged", req.branch);
         Ok(format!("merged {}", req.branch))
     }
 }
