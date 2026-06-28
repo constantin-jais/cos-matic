@@ -142,6 +142,38 @@ pub fn run_loop<S: Stages + ?Sized>(
     Ok(LoopOutcome::Completed { branch })
 }
 
+/// Run the loop, retrying each time a stage stops, until it completes or the
+/// circuit-breaker is exhausted. A stop means the attempt did not land (no fix
+/// produced, a red gate, a rolled-back deploy) — so the loop tries again, bounded
+/// by `env.max_iterations`. Envelope refusals (kill-switch, scope-fence) are
+/// terminal and never retried. On exhaustion the **last stop** is returned (its
+/// stage and reason), not a bare circuit-breaker notice, so the caller learns why
+/// the loop never landed.
+pub fn run_until_done<S: Stages + ?Sized>(
+    stages: &S,
+    env: &LoopEnvelope,
+    req: &LoopRequest,
+) -> Result<LoopOutcome, LoopError> {
+    let mut iteration = 0;
+    let mut last_stop: Option<LoopOutcome> = None;
+    loop {
+        match run_loop(stages, env, req, iteration)? {
+            done @ LoopOutcome::Completed { .. } => return Ok(done),
+            LoopOutcome::Refused { reason } => {
+                // Circuit-breaker exhaustion after one or more stops returns the
+                // last stop (more useful than "max iterations"); a first-pass
+                // refusal (kill-switch / scope-fence) has no prior stop and is
+                // returned as-is.
+                return Ok(last_stop.unwrap_or(LoopOutcome::Refused { reason }));
+            }
+            stop @ LoopOutcome::Stopped { .. } => {
+                last_stop = Some(stop);
+                iteration += 1;
+            }
+        }
+    }
+}
+
 /// A zero-PII audit record of a loop run.
 #[derive(Serialize)]
 struct AuditEntry<'a> {
@@ -294,7 +326,7 @@ impl Stages for RealStages {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
     use super::*;
 
@@ -463,5 +495,80 @@ mod tests {
         assert_eq!(v["repo"], "o/n");
         assert_eq!(v["outcome"], "completed");
         assert_eq!(v.as_object().unwrap().len(), 5);
+    }
+
+    /// Stages whose dispatch starts producing a branch only from attempt
+    /// `dispatch_ok_from`; the other stages always advance. The call counter
+    /// equals the number of loop iterations, for the multi-iteration assertions.
+    struct CountingStages {
+        dispatch_ok_from: u32,
+        calls: Cell<u32>,
+    }
+    impl Stages for CountingStages {
+        fn dispatch(&self, _req: &LoopRequest) -> Result<Option<String>, LoopError> {
+            let n = self.calls.get();
+            self.calls.set(n + 1);
+            Ok((n >= self.dispatch_ok_from).then(|| "b".to_string()))
+        }
+        fn publish(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
+            Ok(true)
+        }
+        fn automerge(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
+            Ok(true)
+        }
+        fn deploy(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
+            Ok(true)
+        }
+    }
+
+    #[test]
+    fn until_done_completes_on_first_pass() {
+        let s = CountingStages {
+            dispatch_ok_from: 0,
+            calls: Cell::new(0),
+        };
+        let r = run_until_done(&s, &env(true, vec![repo()], 3), &req()).unwrap();
+        assert!(matches!(r, LoopOutcome::Completed { .. }));
+        assert_eq!(s.calls.get(), 1, "landed on the first pass");
+    }
+
+    #[test]
+    fn until_done_retries_then_completes() {
+        let s = CountingStages {
+            dispatch_ok_from: 1,
+            calls: Cell::new(0),
+        };
+        let r = run_until_done(&s, &env(true, vec![repo()], 3), &req()).unwrap();
+        assert!(matches!(r, LoopOutcome::Completed { .. }));
+        assert_eq!(s.calls.get(), 2, "stopped once, retried, then landed");
+    }
+
+    #[test]
+    fn until_done_exhausts_and_returns_last_stop() {
+        let s = CountingStages {
+            dispatch_ok_from: 99,
+            calls: Cell::new(0),
+        };
+        let r = run_until_done(&s, &env(true, vec![repo()], 3), &req()).unwrap();
+        match r {
+            LoopOutcome::Stopped { stage, .. } => assert_eq!(stage, "dispatch"),
+            other => panic!("expected the last stop, got {other:?}"),
+        }
+        assert_eq!(s.calls.get(), 3, "tried exactly max_iterations times");
+    }
+
+    #[test]
+    fn until_done_does_not_retry_envelope_refusal() {
+        let s = CountingStages {
+            dispatch_ok_from: 0,
+            calls: Cell::new(0),
+        };
+        let r = run_until_done(&s, &env(false, vec![repo()], 3), &req()).unwrap();
+        assert!(matches!(r, LoopOutcome::Refused { .. }));
+        assert_eq!(
+            s.calls.get(),
+            0,
+            "kill-switch is terminal — no attempt, no retry"
+        );
     }
 }
