@@ -18,6 +18,14 @@ on:
         options:
           - dry-run
           - live
+      fixer:
+        description: "claude (real LLM, needs ANTHROPIC_API_KEY) or stub (deterministic, no key)"
+        required: true
+        default: claude
+        type: choice
+        options:
+          - claude
+          - stub
 
 # Scoped bot identity. This `permissions` block IS the fine-grained scope: the
 # ephemeral github-actions[bot] token, narrowed to exactly what the loop touches.
@@ -64,7 +72,7 @@ jobs:
           echo "::error::live mode refused. Set repository variable AOM_SANDBOX=true to confirm this is a disposable sandbox (never the real repo)."
           exit 1
       - name: Install Claude Code
-        if: inputs.mode == 'live' && vars.AOM_SANDBOX == 'true'
+        if: inputs.mode == 'live' && vars.AOM_SANDBOX == 'true' && inputs.fixer == 'claude'
         run: npm install -g @anthropic-ai/claude-code
       - name: Loop (live)
         if: inputs.mode == 'live' && vars.AOM_SANDBOX == 'true'
@@ -74,6 +82,8 @@ jobs:
           # Scope it to contents+issues+pull_requests on the sandbox repo only.
           GITHUB_TOKEN: ${{ secrets.AOM_BOT_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # claude (real LLM) or stub (deterministic, no Anthropic key needed).
+          AOM_FIXER: ${{ inputs.fixer }}
           # No-op deploy: exercise the wiring, never real infrastructure.
           AOM_DEPLOY_CANARY: "true"
           AOM_DEPLOY_PROMOTE: "true"

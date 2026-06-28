@@ -125,8 +125,13 @@ fn main() -> miette::Result<()> {
                 repo: repo_id.clone(),
             };
             let repo_root = std::env::current_dir().into_diagnostic()?;
-            let report = dispatch::dispatch(&dispatch::ClaudeFixer { repo_root }, &env, &req)
-                .into_diagnostic()?;
+            // AOM_FIXER=stub uses the deterministic no-LLM fixer (no Anthropic key).
+            let report = if std::env::var("AOM_FIXER").as_deref() == Ok("stub") {
+                dispatch::dispatch(&dispatch::StubFixer { repo_root }, &env, &req)
+            } else {
+                dispatch::dispatch(&dispatch::ClaudeFixer { repo_root }, &env, &req)
+            }
+            .into_diagnostic()?;
 
             let ts = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

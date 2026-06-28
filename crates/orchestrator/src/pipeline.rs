@@ -236,13 +236,14 @@ impl Stages for RealStages {
             body: req.body.clone(),
             repo: req.repo.clone(),
         };
-        let report = dispatch::dispatch(
-            &dispatch::ClaudeFixer {
-                repo_root: self.repo_root.clone(),
-            },
-            &env,
-            &fix,
-        )
+        // AOM_FIXER=stub selects the deterministic no-LLM fixer (validate the loop
+        // plumbing without an Anthropic key); anything else uses the real Claude.
+        let root = self.repo_root.clone();
+        let report = if std::env::var("AOM_FIXER").as_deref() == Ok("stub") {
+            dispatch::dispatch(&dispatch::StubFixer { repo_root: root }, &env, &fix)
+        } else {
+            dispatch::dispatch(&dispatch::ClaudeFixer { repo_root: root }, &env, &fix)
+        }
         .map_err(|e| LoopError(e.0))?;
         Ok(match report {
             dispatch::DispatchReport::Attempted { branch, .. } => Some(branch),

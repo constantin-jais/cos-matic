@@ -262,6 +262,59 @@ fn git_stdout(root: &Path, args: &[&str]) -> Result<String, FixerError> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// A deterministic fixer with no LLM (and no Anthropic key): it makes one
+/// trivial, safe change and commits it, so a real branch flows through
+/// publish -> gate -> merge -> deploy. Used to validate the loop's plumbing on a
+/// sandbox before (or without) wiring the real `ClaudeFixer`. Selected with
+/// `AOM_FIXER=stub` (ADR: stub-fixer-for-plumbing).
+pub struct StubFixer {
+    pub repo_root: PathBuf,
+}
+
+impl Fixer for StubFixer {
+    fn attempt(&self, req: &FixRequest) -> Result<FixReport, FixerError> {
+        use std::io::Write as _;
+
+        let branch = format!("aom/fix/issue-{}", req.issue);
+        let wt = self
+            .repo_root
+            .join(".aom")
+            .join("dispatch")
+            .join(format!("issue-{}", req.issue));
+        let wt_str = wt.to_string_lossy().into_owned();
+
+        run_git(
+            &self.repo_root,
+            &["worktree", "add", "-b", &branch, &wt_str, "HEAD"],
+        )?;
+
+        // The "fix": append an auditable marker line. Harmless and never breaks
+        // the build, so the branch sails through CI and the green-only gate.
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(wt.join("SANDBOX_FIXES.md"))
+            .map_err(|e| FixerError(format!("write marker: {e}")))?;
+        writeln!(f, "- stub fix for issue #{}: {}", req.issue, req.title)
+            .map_err(|e| FixerError(format!("write marker: {e}")))?;
+
+        run_git(&wt, &["add", "-A"])?;
+        run_git(
+            &wt,
+            &[
+                "commit",
+                "-m",
+                &format!("fix: #{} {} (stub)", req.issue, req.title),
+            ],
+        )?;
+
+        Ok(FixReport {
+            branch,
+            summary: format!("stub fixer wrote SANDBOX_FIXES.md ({wt_str})"),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;

@@ -28,3 +28,4 @@ doubles as teaching material. Format: context / decision / consequences.
 | [0021](0021-coverage-as-ci-gate.md)                 | Coverage as a blocking CI gate (+ orchestrator E2E)         |
 | [0022](0022-loop-bounded-retry.md)                  | The loop retries: bounded multi-iteration                   |
 | [0023](0023-bounded-fixer-bash-hardening.md)        | Harden the bounded fixer: no arbitrary Bash                 |
+| [0024](0024-stub-fixer-for-plumbing.md)             | A stub fixer to validate loop plumbing without an LLM       |
