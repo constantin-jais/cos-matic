@@ -41,10 +41,10 @@ jobs:
         run: ./target/debug/aom generate --check --manifest examples/minimal/harness.toml
 
   # Coverage: a report on every run + a blocking floor (CLAUDE.md quality gate:
-  # "rapport genere, seuil bloquant en CI"). The floor is intentionally
-  # conservative — the live-boundary I/O wrappers (gh/git/claude subprocess) are
-  # deliberately not unit-covered. Ratchet --fail-under-lines toward the printed
-  # actual as coverage grows.
+  # "rapport genere, seuil bloquant en CI"). Measured line coverage is ~85.5%; the
+  # live-boundary I/O wrappers (gh/git/claude subprocess) are deliberately not
+  # unit-covered, which caps the achievable figure. The floor sits just below with
+  # a small margin — ratchet it up as coverage grows.
   coverage:
     runs-on: ubuntu-latest
     env:
@@ -57,4 +57,4 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: Swatinem/rust-cache@v2
       - name: Coverage report + blocking floor
-        run: cargo llvm-cov --workspace --all-features --summary-only --fail-under-lines 60
+        run: cargo llvm-cov --workspace --all-features --summary-only --fail-under-lines 80
