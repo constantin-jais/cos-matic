@@ -42,6 +42,15 @@ jobs:
       - name: Drift gate
         run: ./target/debug/aom generate --check --manifest examples/minimal/harness.toml
 
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@cargo-audit
+      - uses: taiki-e/install-action@cargo-deny
+      - name: Dependency audit
+        run: ./scripts/audit-deps.sh
+
   # Coverage: a report on every run + a blocking floor (CLAUDE.md quality gate:
   # "rapport genere, seuil bloquant en CI"). Measured line coverage is ~85.5%; the
   # live-boundary I/O wrappers (gh/git/claude subprocess) are deliberately not
