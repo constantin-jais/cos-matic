@@ -92,7 +92,28 @@ Each level is an _additive_ envelope: L1 → L2 → L3 adds evidence checks and
 removes human gates — not a rewrite. The decision logic is proven offline via
 traits (`Fixer`, `Gate`, `Forge`, `Stages`); live runs validate the boundary.
 
-## Quick start: L0 (config compilation)
+## Quick start: Interactive onboarding (L0–L3)
+
+```sh
+cargo build --release
+./target/release/aom init      # interactive wizard (or --help for non-interactive flags)
+```
+
+For scripting / CI, use flags to skip prompts:
+
+```sh
+aom init --name my-project --level L1 --adapter universal --adapter claude --yes
+```
+
+This scaffolds `harness.toml`, domains, and (for L1+) a GitHub workflow template. Then compile:
+
+```sh
+aom generate --check           # verify the scaffold is valid
+```
+
+---
+
+## Quick reference: L0 (config compilation)
 
 ```sh
 cargo build --release          # → target/release/aom
@@ -208,7 +229,7 @@ account-level risk (ADR-0019).
 | **Diagnostics**         | `miette`                                   | Rich, pointed errors from day one — errors should teach. (ADR-0005)                                                                                                                                                                     |
 | **Config & policy**     | `serde` + `toml`                           | A typed manifest _and_ typed policy — declarative, auditable, no separate rule engine. (ADR-0026)                                                                                                                                       |
 | **CLI**                 | `clap`                                     | Standard derive-macro CLI.                                                                                                                                                                                                              |
-| **Wizard prompts**      | `inquire` (planned)                        | Prompts for the `aom init` onboarding wizard (L0–L3 presets).                                                                                                                                                                           |
+| **Wizard prompts**      | `inquire`                                  | TUI prompts for the `aom init` onboarding wizard (L0–L3 presets, non-interactive mode for CI). (ADR-0028)                                                                                                                               |
 | **Content integrity**   | `blake3`                                   | Fast content fingerprints for the lockfile (drift detection) and incident idempotency.                                                                                                                                                  |
 | **Forge seam**          | `Forge` trait (`GithubForge`, `FakeForge`) | GitHub-first; designed so GitLab/Gitea are additive impls (design-for-multi-forge, implement-GitHub-only). (ADR-0026 §1, §6)                                                                                                            |
 | **Fixer isolation**     | `Fixer` trait → `FixerRuntime` (target)    | Today: headless Claude with an allow-list (`Edit Write Read Grep Glob Bash(cargo *)`), in an ephemeral runner. Target: gVisor (V1) → Firecracker microVM. (ADR-0023, ADR-0026 §2)                                                       |
@@ -243,8 +264,9 @@ Consequences` form, so the repo doubles as teaching material. The load-bearing o
 | **North-star**           | [0025](docs/adr/0025-north-star-trustworthy-autonomy.md)                 |
 | **Architecture targets** | [0026](docs/adr/0026-architecture-targets-seams-isolation-durability.md) |
 | Consolidate on octocrab  | [0027](docs/adr/0027-orchestrator-consolidated-on-octocrab.md)           |
+| Onboarding wizard        | [0028](docs/adr/0028-init-onboarding-wizard.md)                          |
 
-**27 ADRs** in [`docs/adr/`](docs/adr/) — the full reasoning, cross-linked.
+**28 ADRs** in [`docs/adr/`](docs/adr/) — the full reasoning, cross-linked.
 
 ## Forking & self-hosting
 
@@ -314,7 +336,7 @@ are the spec. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and start with the
 ## Further reading
 
 - **[Orchestrator runbook](docs/orchestrator-runbook.md)** — set up + run the loop in CI.
-- **[ADR archive](docs/adr/)** — 27 decisions, the full reasoning.
+- **[ADR archive](docs/adr/)** — 28 decisions, the full reasoning.
 - **[Examples](examples/)** — a minimal `harness.toml`.
 
 ## License

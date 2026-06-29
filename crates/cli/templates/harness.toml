@@ -1,0 +1,22 @@
+[package]
+name = "{{name}}"
+builtins = ["tdd", "code-style"]
+
+[[domains]]
+name = "core-values"
+priority = 10
+content_file = "domains/core-values.md"
+
+[[profiles]]
+name = "default"
+domains = ["tdd", "code-style", "core-values"]
+
+{{adapter_targets}}
+
+[autonomy]
+level = "{{level}}"
+# Autonomy levels (ADR: north-star-trustworthy-autonomy):
+#   L0 = compile-only (no autonomy, zero risk)
+#   L1 = bounded dispatch (proposes, human merges)
+#   L2 = gated loop (auto-merges on green, requires approval policy)
+#   L3 = trusted autonomy (full auto under sandbox + policy)

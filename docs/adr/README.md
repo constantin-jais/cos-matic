@@ -32,3 +32,4 @@ doubles as teaching material. Format: context / decision / consequences.
 | [0025](0025-north-star-trustworthy-autonomy.md)                 | North-star: trustworthy, self-hostable autonomous code-ops              |
 | [0026](0026-architecture-targets-seams-isolation-durability.md) | Architecture targets: Forge + FixerRuntime seams, isolation, durability |
 | [0027](0027-orchestrator-consolidated-on-octocrab.md)           | Orchestrator consolidated on octocrab (kill the `gh` calls)             |
+| [0028](0028-init-onboarding-wizard.md)                          | Interactive wizard for L0–L3 onboarding (`aom init`)                    |

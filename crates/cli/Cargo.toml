@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 agent-o-matic.workspace = true
 clap.workspace = true
+inquire.workspace = true
 miette.workspace = true
 orchestrator.workspace = true
 tokio.workspace = true

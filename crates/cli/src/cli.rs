@@ -120,6 +120,29 @@ pub enum Command {
         #[arg(long, default_value_t = 3)]
         max_iterations: u32,
     },
+
+    /// Initialize a new Agent-O-Matic project (interactive setup wizard).
+    Init {
+        /// Project name (skips prompt if provided).
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Autonomy level: L0, L1, L2, or L3.
+        #[arg(long, value_name = "LEVEL")]
+        level: Option<String>,
+
+        /// Adapter to include (repeatable): universal, claude, or cursor.
+        #[arg(long = "adapter", value_name = "ADAPTER")]
+        adapters: Vec<String>,
+
+        /// GitHub repo in format owner/name (optional).
+        #[arg(long, value_name = "REPO")]
+        repo: Option<String>,
+
+        /// Skip all prompts; use flags + defaults (non-interactive mode).
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]

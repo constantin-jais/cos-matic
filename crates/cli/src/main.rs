@@ -1,6 +1,7 @@
 //! The `aom` binary: parse args, dispatch to the compiler or the orchestrator.
 
 mod cli;
+mod init;
 
 use clap::Parser;
 use miette::{IntoDiagnostic, miette};
@@ -14,6 +15,19 @@ use orchestrator::{automerge, deploy, dispatch, incident, pipeline};
 fn main() -> miette::Result<()> {
     let cli = Cli::parse();
     match cli.command {
+        Command::Init {
+            name,
+            level,
+            adapters,
+            repo,
+            yes,
+        } => {
+            let config = init::gather_inputs(name, level, adapters, repo, yes)?;
+            let target_dir = std::env::current_dir().into_diagnostic()?;
+            init::scaffold(&config, &target_dir)?;
+            init::print_checklist(&config);
+            Ok(())
+        }
         Command::Generate {
             manifest,
             check,
