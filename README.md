@@ -221,20 +221,24 @@ account-level risk (ADR-0019).
 
 ## Tech stack, with rationale
 
-| Component               | Choice                                     | Why                                                                                                                                                                                                                                     |
-| ----------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Language**            | Rust, edition 2024                         | Memory safety without a GC; a single self-contained binary (decisive for a tool meant to be forked + self-hosted); the type system enforces the safe-write state machine at compile time. (ADR-0002)                                    |
-| **Async runtime**       | `tokio` + `async-trait`                    | Required by `octocrab`. Confined to the forge boundary; the compiler stays synchronous.                                                                                                                                                 |
-| **GitHub API**          | `octocrab` (typed client)                  | Typed client for **all** GitHub ops — issues (ADR-0012) and, since ADR-0027, the orchestrator's gate/publish/merge. The `gh`-subprocess coupling that caused ~half the live-debug bugs is gone; `git push` is the only subprocess left. |
-| **Diagnostics**         | `miette`                                   | Rich, pointed errors from day one — errors should teach. (ADR-0005)                                                                                                                                                                     |
-| **Config & policy**     | `serde` + `toml`                           | A typed manifest _and_ typed policy — declarative, auditable, no separate rule engine. (ADR-0026)                                                                                                                                       |
-| **CLI**                 | `clap`                                     | Standard derive-macro CLI.                                                                                                                                                                                                              |
-| **Wizard prompts**      | `inquire`                                  | TUI prompts for the `aom init` onboarding wizard (L0–L3 presets, non-interactive mode for CI). (ADR-0028)                                                                                                                               |
-| **Content integrity**   | `blake3`                                   | Fast content fingerprints for the lockfile (drift detection) and incident idempotency.                                                                                                                                                  |
-| **Forge seam**          | `Forge` trait (`GithubForge`, `FakeForge`) | GitHub-first; designed so GitLab/Gitea are additive impls (design-for-multi-forge, implement-GitHub-only). (ADR-0026 §1, §6)                                                                                                            |
-| **Fixer isolation**     | `Fixer` trait → `FixerRuntime` (target)    | Today: headless Claude with an allow-list (`Edit Write Read Grep Glob Bash(cargo *)`), in an ephemeral runner. Target: gVisor (V1) → Firecracker microVM. (ADR-0023, ADR-0026 §2)                                                       |
-| **Policy**              | Typed TOML (`[autonomy]`, `[policy]`)      | Declarative, versionable, auditable. No OPA/Rego — a rule engine is overkill here. (ADR-0026 §3)                                                                                                                                        |
-| **Durability (future)** | SQLite run-state                           | Proto: the zero-PII JSONL audit. Target: a SQLite run-ledger for resume + replay. **Not** Temporal — an external service fights the self-hostable ethos. (ADR-0026 §4)                                                                  |
+| Component               | Choice                                       | Why                                                                                                                                                                                                                                     |
+| ----------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Language**            | Rust, edition 2024                           | Memory safety without a GC; a single self-contained binary (decisive for a tool meant to be forked + self-hosted); the type system enforces the safe-write state machine at compile time. (ADR-0002)                                    |
+| **Async runtime**       | `tokio` + `async-trait`                      | Required by `octocrab`. Confined to the forge boundary; the compiler stays synchronous.                                                                                                                                                 |
+| **GitHub API**          | `octocrab` (typed client)                    | Typed client for **all** GitHub ops — issues (ADR-0012) and, since ADR-0027, the orchestrator's gate/publish/merge. The `gh`-subprocess coupling that caused ~half the live-debug bugs is gone; `git push` is the only subprocess left. |
+| **Diagnostics**         | `miette`                                     | Rich, pointed errors from day one — errors should teach. (ADR-0005)                                                                                                                                                                     |
+| **Config & policy**     | `serde` + `toml`                             | A typed manifest _and_ typed policy — declarative, auditable, no separate rule engine. (ADR-0026)                                                                                                                                       |
+| **CLI**                 | `clap`                                       | Standard derive-macro CLI.                                                                                                                                                                                                              |
+| **Wizard prompts**      | `inquire`                                    | TUI prompts for the `aom init` onboarding wizard (L0–L3 presets, non-interactive mode for CI). (ADR-0028)                                                                                                                               |
+| **Content integrity**   | `blake3`                                     | Fast content fingerprints for the lockfile (drift detection) and incident idempotency.                                                                                                                                                  |
+| **Forge seam**          | `Forge` trait (`GithubForge`, `FakeForge`)   | GitHub-first; designed so GitLab/Gitea are additive impls (design-for-multi-forge, implement-GitHub-only). (ADR-0026 §1, §6)                                                                                                            |
+| **Fixer isolation**     | `Fixer` trait → `FixerRuntime` (target)      | Today: headless Claude with an allow-list (`Edit Write Read Grep Glob Bash(cargo *)`), in an ephemeral runner. Target: gVisor (V1) → Firecracker microVM. (ADR-0023, ADR-0026 §2)                                                       |
+| **Policy**              | Typed TOML (`[autonomy]`, `[policy]`)        | Declarative, versionable, auditable. No OPA/Rego — a rule engine is overkill here. (ADR-0026 §3)                                                                                                                                        |
+| **Durability (future)** | SQLite run-state                             | Proto: the zero-PII JSONL audit. Target: a SQLite run-ledger for resume + replay. **Not** Temporal — an external service fights the self-hostable ethos. (ADR-0026 §4)                                                                  |
+| **Portability core**    | `aom-core` (pure, `wasm32`-ready)            | One I/O-free `compile()` → `Vec<RenderedFile>`; bound via UniFFI/WIT/wasm-bindgen, never reimplemented. (ADR-0029)                                                                                                                      |
+| **Distribution seam**   | `Distributor` trait (target)                 | Append-only/forward-only publishing under the safety envelope; `compensate`, never rollback. (ADR-0030)                                                                                                                                 |
+| **Supply-chain**        | sigstore/cosign keyless, SLSA, SBOM (target) | Keyless/OIDC publishing — no long-lived secret; a store-free sovereign floor per platform as a CI gate. (ADR-0031)                                                                                                                      |
+| **Native UI**           | truly-native per platform (target)           | SwiftUI/Compose/WinUI/GTK over one Rust core; N native UIs ≠ N logic impls. (ADR-0032)                                                                                                                                                  |
 
 **Why Rust over Go/TS:** the type system lets the compiler enforce the safe-write
 state machine and the determinism guarantees at compile time, and a single
@@ -246,27 +250,31 @@ runtime to install (ADR-0002).
 Every non-obvious choice is an ADR, in `Status / Context / Decision /
 Consequences` form, so the repo doubles as teaching material. The load-bearing ones:
 
-| What                     | ADR                                                                      |
-| ------------------------ | ------------------------------------------------------------------------ |
-| Positioning / why build  | [0001](docs/adr/0001-positioning-and-why-build.md)                       |
-| Language: Rust           | [0002](docs/adr/0002-language-rust.md)                                   |
-| Safe-write lockfile      | [0004](docs/adr/0004-safe-write-sentinel-lockfile.md)                    |
-| Drift as a CI gate       | [0010](docs/adr/0010-drift-as-ci-gate.md)                                |
-| Workspace + orchestrator | [0011](docs/adr/0011-workspace-and-orchestrator-charter.md)              |
-| GitHub via octocrab      | [0012](docs/adr/0012-github-via-octocrab.md)                             |
-| Bounded dispatch         | [0014](docs/adr/0014-dispatch-bounded-fixer.md)                          |
-| Autonomous merge         | [0015](docs/adr/0015-autonomous-merge.md)                                |
-| Deploy + rollback        | [0016](docs/adr/0016-deploy-canary-smoke-rollback.md)                    |
-| End-to-end loop          | [0017](docs/adr/0017-end-to-end-loop.md)                                 |
-| Scoped CI bot            | [0019](docs/adr/0019-operate-loop-as-scoped-ci-bot.md)                   |
-| Merge gate waits         | [0020](docs/adr/0020-merge-gate-waits-for-checks.md)                     |
-| Bounded-fixer hardening  | [0023](docs/adr/0023-bounded-fixer-bash-hardening.md)                    |
-| **North-star**           | [0025](docs/adr/0025-north-star-trustworthy-autonomy.md)                 |
-| **Architecture targets** | [0026](docs/adr/0026-architecture-targets-seams-isolation-durability.md) |
-| Consolidate on octocrab  | [0027](docs/adr/0027-orchestrator-consolidated-on-octocrab.md)           |
-| Onboarding wizard        | [0028](docs/adr/0028-init-onboarding-wizard.md)                          |
+| What                                     | ADR                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------ |
+| Positioning / why build                  | [0001](docs/adr/0001-positioning-and-why-build.md)                       |
+| Language: Rust                           | [0002](docs/adr/0002-language-rust.md)                                   |
+| Safe-write lockfile                      | [0004](docs/adr/0004-safe-write-sentinel-lockfile.md)                    |
+| Drift as a CI gate                       | [0010](docs/adr/0010-drift-as-ci-gate.md)                                |
+| Workspace + orchestrator                 | [0011](docs/adr/0011-workspace-and-orchestrator-charter.md)              |
+| GitHub via octocrab                      | [0012](docs/adr/0012-github-via-octocrab.md)                             |
+| Bounded dispatch                         | [0014](docs/adr/0014-dispatch-bounded-fixer.md)                          |
+| Autonomous merge                         | [0015](docs/adr/0015-autonomous-merge.md)                                |
+| Deploy + rollback                        | [0016](docs/adr/0016-deploy-canary-smoke-rollback.md)                    |
+| End-to-end loop                          | [0017](docs/adr/0017-end-to-end-loop.md)                                 |
+| Scoped CI bot                            | [0019](docs/adr/0019-operate-loop-as-scoped-ci-bot.md)                   |
+| Merge gate waits                         | [0020](docs/adr/0020-merge-gate-waits-for-checks.md)                     |
+| Bounded-fixer hardening                  | [0023](docs/adr/0023-bounded-fixer-bash-hardening.md)                    |
+| **North-star**                           | [0025](docs/adr/0025-north-star-trustworthy-autonomy.md)                 |
+| **Architecture targets**                 | [0026](docs/adr/0026-architecture-targets-seams-isolation-durability.md) |
+| Consolidate on octocrab                  | [0027](docs/adr/0027-orchestrator-consolidated-on-octocrab.md)           |
+| Onboarding wizard                        | [0028](docs/adr/0028-init-onboarding-wizard.md)                          |
+| **Portability: bind, don't reimplement** | [0029](docs/adr/0029-portability-rust-core-bind-not-reimplement.md)      |
+| **Distribution doctrine (append-only)**  | [0030](docs/adr/0030-distribution-doctrine-append-only.md)               |
+| Supply-chain & sovereignty               | [0031](docs/adr/0031-supply-chain-and-sovereignty.md)                    |
+| Native UI & binding matrix               | [0032](docs/adr/0032-native-ui-and-binding-matrix.md)                    |
 
-**28 ADRs** in [`docs/adr/`](docs/adr/) — the full reasoning, cross-linked.
+**32 ADRs** in [`docs/adr/`](docs/adr/) — the full reasoning, cross-linked.
 
 ## Forking & self-hosting
 
