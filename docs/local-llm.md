@@ -15,19 +15,27 @@ operator workstation.
 Start LM Studio, load the model, enable the local server, then run:
 
 ```sh
-curl http://127.0.0.1:1234/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "model": "google/gemma-4-26b-a4b-qat",
-    "messages": [
-      {"role": "system", "content": "You are a concise local smoke-test assistant."},
-      {"role": "user", "content": "Reply with: bolt local llm ok"}
-    ],
-    "temperature": 0
-  }'
+scripts/local-llm-smoke.sh
 ```
 
-Expected: a local response containing `bolt local llm ok` or a very close variant.
+Expected output:
+
+```text
+bolt local llm ok
+```
+
+The script defaults to:
+
+```sh
+LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1
+LM_STUDIO_MODEL=google/gemma-4-26b-a4b-qat
+```
+
+Override those environment variables only for local experiments.
+
+## Evidence
+
+Local smoke evidence is recorded in [`docs/evidence/2026-07-01-local-llm-smoke.md`](evidence/2026-07-01-local-llm-smoke.md).
 
 ## Current integration boundary
 
