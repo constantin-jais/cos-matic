@@ -18,6 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Secret pattern smoke
+        run: |
+          set -euo pipefail
+          if git grep -nEI '(AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN (RSA|DSA|EC|OPENSSH) PRIVATE KEY-----)' -- ':!package-lock.json' ':!Cargo.lock' ':!.github/workflows/security.yml'; then
+            echo "::error::potential secret pattern found"
+            exit 1
+          fi
       - uses: taiki-e/install-action@5626e41434f03ab3022d9685405c0645c879f441 # cargo-audit
       - uses: taiki-e/install-action@0e7663120db3124b0ca0f9dd97602c8035479559 # cargo-deny
       - name: Dependency audit
