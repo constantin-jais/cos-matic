@@ -25,7 +25,7 @@ jobs:
             echo "::error::potential secret pattern found"
             exit 1
           fi
-      - uses: taiki-e/install-action@5626e41434f03ab3022d9685405c0645c879f441 # cargo-audit
-      - uses: taiki-e/install-action@0e7663120db3124b0ca0f9dd97602c8035479559 # cargo-deny
+      - uses: taiki-e/install-action@c6d51ded7cde3c421f6cd6046cd601f2248f3710 # cargo-audit
+      - uses: taiki-e/install-action@c6d51ded7cde3c421f6cd6046cd601f2248f3710 # cargo-deny
       - name: Dependency audit
         run: ./scripts/audit-deps.sh
