@@ -2,7 +2,7 @@
 //!
 //! These checks are intentionally local, filesystem-only, and policy-driven.
 //! They are the first executable form of ADR: rust-core-doctrine-hardening.
-//! The module lives in `cos-matic` while `wrench-inspect` is still a
+//! The module lives in `bolt-cos-matic` while `wrench-inspect` is still a
 //! skeleton, but the API is narrow so it can be extracted later.
 
 use std::fs;

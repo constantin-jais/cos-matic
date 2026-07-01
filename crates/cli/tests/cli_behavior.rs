@@ -1,6 +1,6 @@
-//! Black-box behavioral tests on the `cosmatic` binary itself.
+//! Black-box behavioral tests on the `bolt-cosmatic` binary itself.
 //!
-//! The library-level e2e tests in `crates/aom` exercise `generate::run`, but the
+//! The library-level e2e tests in `crates/core` exercise `generate::run`, but the
 //! binary's *observable output* — the per-file report, the graceful-degradation
 //! warnings on stderr, and the up-to-date message — went untested. The workspace
 //! split relocated `run()` into this crate and nearly dropped the warnings loop
@@ -10,9 +10,9 @@
 use std::fs;
 use std::process::Command;
 
-/// Path to the compiled `cosmatic` binary, injected by Cargo for integration tests of
+/// Path to the compiled `bolt-cosmatic` binary, injected by Cargo for integration tests of
 /// the crate that defines the bin.
-const COSMATIC: &str = env!("CARGO_BIN_EXE_cosmatic");
+const COSMATIC: &str = env!("CARGO_BIN_EXE_bolt-cosmatic");
 
 fn repo_root() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -22,28 +22,28 @@ fn repo_root() -> std::path::PathBuf {
 }
 
 #[test]
-fn cli_help_uses_cosmatic_name() {
+fn cli_help_uses_bolt_cosmatic_name() {
     let out = Command::new(COSMATIC)
         .arg("--help")
         .output()
-        .expect("spawn cosmatic --help");
+        .expect("spawn bolt-cosmatic --help");
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "stdout:\n{stdout}\nstderr:\n{stderr}");
     assert!(
-        stdout.contains("Usage: cosmatic <COMMAND>"),
+        stdout.contains("Usage: bolt-cosmatic <COMMAND>"),
         "help should advertise the installed command name; stdout:\n{stdout}"
     );
 }
 
 #[test]
-fn live_loop_smoke_uses_cosmatic_binary() {
+fn live_loop_smoke_uses_bolt_cosmatic_binary() {
     let script = fs::read_to_string(repo_root().join("scripts/live-loop-smoke.sh"))
         .expect("read live-loop-smoke.sh");
 
     assert!(
-        script.contains("--bin cosmatic"),
+        script.contains("--bin bolt-cosmatic"),
         "live smoke script must run the real binary target; script:\n{script}"
     );
     assert!(
@@ -63,7 +63,7 @@ fn root_harness_is_present_and_in_sync() {
         .arg(&manifest)
         .current_dir(&root)
         .output()
-        .expect("spawn cosmatic generate --check --manifest harness.toml");
+        .expect("spawn bolt-cosmatic generate --check --manifest harness.toml");
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -83,7 +83,7 @@ fn check_prints_files_up_to_date_message() {
         .args(["generate", "--check"])
         .current_dir(&example)
         .output()
-        .expect("spawn cosmatic generate --check");
+        .expect("spawn bolt-cosmatic generate --check");
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -140,7 +140,7 @@ profile = "default"
         .arg("generate")
         .current_dir(root)
         .output()
-        .expect("spawn cosmatic generate");
+        .expect("spawn bolt-cosmatic generate");
 
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -175,7 +175,7 @@ fn maturity_validate_json_reports_contract_first_claim() {
     let out = Command::new(COSMATIC)
         .args(["maturity", "validate", claim.to_str().unwrap(), "--json"])
         .output()
-        .expect("spawn cosmatic maturity validate --json");
+        .expect("spawn bolt-cosmatic maturity validate --json");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "stdout:\n{stdout}\nstderr:\n{stderr}");
@@ -206,7 +206,7 @@ fn maturity_validate_rejects_mobile_without_portable_core() {
     let out = Command::new(COSMATIC)
         .args(["maturity", "validate", claim.to_str().unwrap(), "--json"])
         .output()
-        .expect("spawn cosmatic maturity validate --json");
+        .expect("spawn bolt-cosmatic maturity validate --json");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(!out.status.success(), "stdout:\n{stdout}");
     assert!(
@@ -223,7 +223,7 @@ fn maturity_report_summarizes_directory() {
     let out = Command::new(COSMATIC)
         .args(["maturity", "report", tmp.path().to_str().unwrap()])
         .output()
-        .expect("spawn cosmatic maturity report");
+        .expect("spawn bolt-cosmatic maturity report");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "stdout:\n{stdout}\nstderr:\n{stderr}");
@@ -285,7 +285,7 @@ fn handoff_validate_json_reports_valid_payload() {
     let out = Command::new(COSMATIC)
         .args(["handoff", "validate", payload.to_str().unwrap(), "--json"])
         .output()
-        .expect("spawn cosmatic handoff validate --json");
+        .expect("spawn bolt-cosmatic handoff validate --json");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "stdout:\n{stdout}\nstderr:\n{stderr}");
@@ -304,7 +304,7 @@ fn handoff_validate_uses_canonical_execution_policy_refusal_code() {
     let out = Command::new(COSMATIC)
         .args(["handoff", "validate", payload.to_str().unwrap(), "--json"])
         .output()
-        .expect("spawn cosmatic handoff validate --json");
+        .expect("spawn bolt-cosmatic handoff validate --json");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(!out.status.success(), "stdout:\n{stdout}");
     assert!(
@@ -322,7 +322,7 @@ fn handoff_validate_rejects_artifact_ref_without_hash() {
     let out = Command::new(COSMATIC)
         .args(["handoff", "validate", payload.to_str().unwrap(), "--json"])
         .output()
-        .expect("spawn cosmatic handoff validate --json");
+        .expect("spawn bolt-cosmatic handoff validate --json");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(!out.status.success(), "stdout:\n{stdout}");
     assert!(
@@ -340,7 +340,7 @@ fn handoff_validate_rejects_sovereignty_violation() {
     let out = Command::new(COSMATIC)
         .args(["handoff", "validate", payload.to_str().unwrap(), "--json"])
         .output()
-        .expect("spawn cosmatic handoff validate --json");
+        .expect("spawn bolt-cosmatic handoff validate --json");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(!out.status.success(), "stdout:\n{stdout}");
     assert!(
@@ -358,7 +358,7 @@ fn handoff_validate_rejects_handoff_hash_conflict() {
     let out = Command::new(COSMATIC)
         .args(["handoff", "validate", payload.to_str().unwrap(), "--json"])
         .output()
-        .expect("spawn cosmatic handoff validate --json");
+        .expect("spawn bolt-cosmatic handoff validate --json");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(!out.status.success(), "stdout:\n{stdout}");
     assert!(
@@ -398,7 +398,7 @@ fn handoff_plan_requires_dry_run() {
     let out = Command::new(COSMATIC)
         .args(["handoff", "plan", payload.to_str().unwrap()])
         .output()
-        .expect("spawn cosmatic handoff plan");
+        .expect("spawn bolt-cosmatic handoff plan");
     assert!(!out.status.success(), "plan without --dry-run must fail");
 }
 
@@ -413,7 +413,7 @@ fn run_killed(
     for (k, v) in extra_env {
         c.env(k, v);
     }
-    c.output().expect("spawn cosmatic")
+    c.output().expect("spawn bolt-cosmatic")
 }
 
 fn assert_refused(out: &std::process::Output, who: &str) {
@@ -433,7 +433,7 @@ fn assert_refused(out: &std::process::Output, who: &str) {
 fn dispatch_kill_switch_refuses_before_any_agent() {
     let out = run_killed(
         &["dispatch", "--issue", "1", "--title", "x", "--repo", "o/n"],
-        "cosmatic_DISPATCH_DISABLED",
+        "BOLT_COSMATIC_DISPATCH_DISABLED",
         &[],
     );
     assert_refused(&out, "dispatch");
@@ -446,7 +446,7 @@ fn automerge_kill_switch_refuses_before_any_merge() {
     // any API call.
     let out = run_killed(
         &["automerge", "--branch", "x", "--repo", "o/n"],
-        "cosmatic_AUTOMERGE_DISABLED",
+        "BOLT_COSMATIC_AUTOMERGE_DISABLED",
         &[("GITHUB_TOKEN", "ghp_test_dummy")],
     );
     assert_refused(&out, "automerge");
@@ -458,12 +458,12 @@ fn deploy_kill_switch_refuses_before_any_command() {
     // the kill-switch then refuses before any of them runs.
     let out = run_killed(
         &["deploy", "--target", "x", "--repo", "o/n"],
-        "cosmatic_DEPLOY_DISABLED",
+        "BOLT_COSMATIC_DEPLOY_DISABLED",
         &[
-            ("cosmatic_DEPLOY_CANARY", "true"),
-            ("cosmatic_DEPLOY_PROMOTE", "true"),
-            ("cosmatic_DEPLOY_ROLLBACK", "true"),
-            ("cosmatic_DEPLOY_SMOKE", "true"),
+            ("BOLT_COSMATIC_DEPLOY_CANARY", "true"),
+            ("BOLT_COSMATIC_DEPLOY_PROMOTE", "true"),
+            ("BOLT_COSMATIC_DEPLOY_ROLLBACK", "true"),
+            ("BOLT_COSMATIC_DEPLOY_SMOKE", "true"),
         ],
     );
     assert_refused(&out, "deploy");
@@ -476,7 +476,7 @@ fn loop_kill_switch_refuses_before_any_stage() {
     // any stage runs.
     let out = run_killed(
         &["loop", "--issue", "1", "--title", "x", "--repo", "o/n"],
-        "cosmatic_LOOP_DISABLED",
+        "BOLT_COSMATIC_LOOP_DISABLED",
         &[("GITHUB_TOKEN", "ghp_test_dummy")],
     );
     assert_refused(&out, "loop");

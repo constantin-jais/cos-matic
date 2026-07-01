@@ -68,7 +68,7 @@ not implementations.
 - Autonomy stops being a binary pitch and becomes a graduated ladder tied to
   proof and control. The framing everywhere becomes "start at zero risk, earn
   autonomy as confidence grows."
-- The L0→L3 ladder shapes the roadmap, the docs, and the `cosmatic init` presets.
+- The L0→L3 ladder shapes the roadmap, the docs, and the `bolt-cosmatic init` presets.
   Each level is a distinct, shippable milestone.
 - Success is forks and self-hosted instances, not SaaS seats. A fork that bends
   the policy to its own domain is a win.

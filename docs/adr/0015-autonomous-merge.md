@@ -13,14 +13,14 @@ binding here.
 
 ## Decision
 
-`cosmatic automerge` gates-and-merges a branch, governed by one cardinal rule and the
+`bolt-cosmatic automerge` gates-and-merges a branch, governed by one cardinal rule and the
 binding envelope:
 
 - **Cardinal rule — nothing merges without attached green evidence.** The gate
   yields a `Verdict`; only `Green` may merge. `Red` and `Unknown` (pending or
   missing checks) both refuse — **fail-closed**. A gate-wall never green-lights
   what it could not verify.
-- **Envelope** — kill-switch (`cosmatic_AUTOMERGE_DISABLED`), scope-fence (a repo
+- **Envelope** — kill-switch (`BOLT_COSMATIC_AUTOMERGE_DISABLED`), scope-fence (a repo
   allowlist), rate-limit / circuit-breaker (max merges per run).
 - **Reversible** — a merge is undoable by revert; combined with the green-only
   rule, the blast radius stays bounded.

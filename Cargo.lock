@@ -198,6 +198,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "bolt-cos-matic"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "miette",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
+name = "bolt-cos-matic-cli"
+version = "0.0.0"
+dependencies = [
+ "bolt-cos-matic",
+ "clap",
+ "inquire",
+ "miette",
+ "orchestrator",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -351,33 +378,6 @@ name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
-
-[[package]]
-name = "cos-matic"
-version = "0.0.0"
-dependencies = [
- "blake3",
- "miette",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "toml",
-]
-
-[[package]]
-name = "cos-matic-cli"
-version = "0.0.0"
-dependencies = [
- "clap",
- "cos-matic",
- "inquire",
- "miette",
- "orchestrator",
- "serde_json",
- "tempfile",
- "tokio",
-]
 
 [[package]]
 name = "cpufeatures"

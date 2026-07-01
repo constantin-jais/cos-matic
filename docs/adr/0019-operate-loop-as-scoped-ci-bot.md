@@ -23,7 +23,7 @@ The loop runs as a scoped service identity in CI
   for the read-only dry-run there is no PAT at all.
 - **Trigger** = `workflow_dispatch` only. The autonomous loop never fires on push.
 - **Safe by default** = dry-run; the live path is fenced to a repo explicitly
-  flagged `cosmatic_SANDBOX=true`, and uses a fine-grained PAT scoped to the sandbox
+  flagged `BOLT_HARNESS_SANDBOX=true`, and uses a fine-grained PAT scoped to the sandbox
   (needed only so the bot's push triggers CI, so the gate can go green).
 - **Bash containment** = the headless fixer's `--allowedTools Bash` runs inside
   the throwaway runner, not a developer's machine.

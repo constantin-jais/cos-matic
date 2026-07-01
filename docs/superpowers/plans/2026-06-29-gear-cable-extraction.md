@@ -1,14 +1,14 @@
-# Link Cable — Extraction Plan from cos-matic
+# Link Cable — Extraction Plan from bolt-cos-matic
 
 > **For agentic build workers:** this is an implementation plan. Execute task-by-task, keep checkboxes updated, and do not broaden scope without a new ADR/plan. The target repository is `https://github.com/constantin-jais/gear-cable`.
 
-**Goal:** extract the multi-platform distribution product from cos-matic into a dedicated Rust-first repository named **Link Cable**, without breaking cos-matic and without inventing platform UI/application logic prematurely.
+**Goal:** extract the multi-platform distribution product from bolt-cos-matic into a dedicated Rust-first repository named **Link Cable**, without breaking bolt-cos-matic and without inventing platform UI/application logic prematurely.
 
 **Progress (2026-06-29):** Link Cable is initialized and pushed at `constantin-jais/gear-cable` (`7b2ecb8`) with green CI. Tasks 0, 1, 2, 6, and 7 are complete; Task 3 policy gates are partially complete; local build/checksum and publish flows remain open.
 
-**Product boundary:** Link Cable owns the distribution substrate: build matrix, artifact model, install/update/doctor flows, release manifests, signatures/checksums/provenance, bindings around one Rust core, and channel-specific publishing primitives. cos-matic remains the agent/autonomy product and becomes the first consumer.
+**Product boundary:** Link Cable owns the distribution substrate: build matrix, artifact model, install/update/doctor flows, release manifests, signatures/checksums/provenance, bindings around one Rust core, and channel-specific publishing primitives. bolt-cos-matic remains the agent/autonomy product and becomes the first consumer.
 
-**Source doctrine in cos-matic:**
+**Source doctrine in bolt-cos-matic:**
 
 - `docs/adr/0029-portability-rust-core-bind-not-reimplement.md` — one Rust core, generated bindings, no reimplementation.
 - `docs/adr/0030-distribution-doctrine-append-only.md` — forward-only publish, `compensate` not rollback.
@@ -24,7 +24,7 @@
 - **Sovereign floor:** every supported platform must have at least one store-free install path, except iOS where the EU DMA caveat must be explicit.
 - **Single Rust core:** no Swift/Kotlin/TypeScript reimplementation of distribution logic.
 - **Generated bindings only:** hand-written native code may be UI or thin host glue, not business logic.
-- **cos-matic stays green:** extraction must not regress `cargo fmt`, `cargo clippy`, `cargo test`, dependency audit, or dogfood checks.
+- **bolt-cos-matic stays green:** extraction must not regress `cargo fmt`, `cargo clippy`, `cargo test`, dependency audit, or dogfood checks.
 - **Small reversible steps:** first migrate doctrine and scaffolding, then shared crates, then consumers.
 
 ## Target architecture
@@ -49,7 +49,7 @@ gear-cable/
   schemas/
     gear-cable.manifest.schema.json
   examples/
-    cos-matic/
+    bolt-cos-matic/
       gear-cable.toml
   scripts/
     audit-deps.sh
@@ -76,7 +76,7 @@ Owns:
 Must not own:
 
 - GitHub-specific orchestration;
-- cos-matic manifest compilation;
+- bolt-cos-matic manifest compilation;
 - app UI;
 - network publishing side effects.
 
@@ -137,14 +137,14 @@ All mutating commands need `--yes` or CI policy approval. Default local mode is 
 
 ```toml
 [package]
-name = "cos-matic"
+name = "bolt-cos-matic"
 version = "0.0.0"
-repository = "https://github.com/constantin-jais/cos-matic"
+repository = "https://github.com/constantin-jais/bolt-cos-matic"
 
 [core]
 language = "rust"
 workspace = "."
-binary = "aom"
+binary = "bolt-cosmatic"
 
 [policy]
 append_only = true
@@ -207,8 +207,8 @@ cd gear-cable
 - [x] Add `README.md` with this positioning:
   - “Rust-first distribution substrate for multi-platform developer tools.”
   - “Forward-only releases, signed artifacts, sovereign install floors.”
-  - “cos-matic is the first consumer.”
-- [x] Add `rust-toolchain.toml` pinned to stable or the same minimum used by cos-matic if required.
+  - “bolt-cos-matic is the first consumer.”
+- [x] Add `rust-toolchain.toml` pinned to stable or the same minimum used by bolt-cos-matic if required.
 - [x] Add root `Cargo.toml` workspace:
 
 ```toml
@@ -245,7 +245,7 @@ lto = "thin"
 ```
 
 - [x] Add `.gitignore` for `target/`, local env files, generated artifacts.
-- [x] Add `deny.toml` and `scripts/audit-deps.sh` based on cos-matic, but remove obsolete exceptions unless the same transitive advisories appear.
+- [x] Add `deny.toml` and `scripts/audit-deps.sh` based on bolt-cos-matic, but remove obsolete exceptions unless the same transitive advisories appear.
 
 **Acceptance:** `cargo metadata` succeeds.
 
@@ -262,9 +262,9 @@ lto = "thin"
 
 **Instructions:**
 
-- [x] Copy the substance of cos-matic ADR-0029 through ADR-0032.
-- [x] Rewrite names from “cos-matic” to “Link Cable” where ownership moved.
-- [x] Keep cos-matic references only as “first consumer / origin doctrine”.
+- [x] Copy the substance of bolt-cos-matic ADR-0029 through ADR-0032.
+- [x] Rewrite names from “bolt-cos-matic” to “Link Cable” where ownership moved.
+- [x] Keep bolt-cos-matic references only as “first consumer / origin doctrine”.
 - [x] Preserve the key decisions:
   - Rust core, bind don’t reimplement;
   - generated bindings;
@@ -274,7 +274,7 @@ lto = "thin"
   - sovereign floor.
 - [x] Mark deferred items explicitly: app stores, notarization, mobile UI, Windows C# binding.
 
-**Acceptance:** docs explain why Link Cable exists without implying cos-matic now owns distribution.
+**Acceptance:** docs explain why Link Cable exists without implying bolt-cos-matic now owns distribution.
 
 ## Task 2 — Scaffold crates and minimal APIs
 
@@ -349,7 +349,7 @@ Implement `gear-cable plan` as a dry-run artifact graph.
 **CLI example:**
 
 ```bash
-gear-cable plan --manifest examples/cos-matic/gear-cable.toml --format json
+gear-cable plan --manifest examples/bolt-cos-matic/gear-cable.toml --format json
 ```
 
 **Acceptance:** JSON output is deterministic and snapshot-tested.
@@ -390,27 +390,27 @@ cargo build -p gear-cable-core --target wasm32-unknown-unknown
 
 **Acceptance:** PRs are blocked on format, lint, tests, audit, and portability.
 
-## Task 7 — cos-matic consumer fixture
+## Task 7 — bolt-cos-matic consumer fixture
 
-In Link Cable, add `examples/cos-matic/gear-cable.toml` and document how cos-matic would consume the tool.
+In Link Cable, add `examples/bolt-cos-matic/gear-cable.toml` and document how bolt-cos-matic would consume the tool.
 
-**Important:** do not edit cos-matic yet beyond docs unless Link Cable has a green CI baseline.
+**Important:** do not edit bolt-cos-matic yet beyond docs unless Link Cable has a green CI baseline.
 
 **Fixture content:** start with the manifest shape above, but reduce supported platforms to what the implementation actually supports.
 
 **Acceptance:**
 
 ```bash
-cargo run -p gear-cable-cli -- plan --manifest examples/cos-matic/gear-cable.toml
+cargo run -p gear-cable-cli -- plan --manifest examples/bolt-cos-matic/gear-cable.toml
 ```
 
 prints a valid plan and no mutating operation runs.
 
-## Task 8 — First integration back into cos-matic
+## Task 8 — First integration back into bolt-cos-matic
 
-After Link Cable has a tagged pre-release, return to cos-matic.
+After Link Cable has a tagged pre-release, return to bolt-cos-matic.
 
-**Files likely changed in cos-matic:**
+**Files likely changed in bolt-cos-matic:**
 
 - `README.md`
 - `docs/adr/0030-distribution-doctrine-append-only.md`
@@ -422,20 +422,20 @@ After Link Cable has a tagged pre-release, return to cos-matic.
 **Rules:**
 
 - [ ] ADRs should say “distribution subsystem extracted to Link Cable” once true.
-- [ ] cos-matic must consume Link Cable as an external tool, not copy its internals.
-- [ ] First integration is `plan`/`doctor` only; no publish from cos-matic CI.
-- [ ] Keep existing cosmatic workflows green.
+- [ ] bolt-cos-matic must consume Link Cable as an external tool, not copy its internals.
+- [ ] First integration is `plan`/`doctor` only; no publish from bolt-cos-matic CI.
+- [ ] Keep existing bolt-cosmatic workflows green.
 
-**Acceptance commands in cos-matic:**
+**Acceptance commands in bolt-cos-matic:**
 
 ```bash
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features
 cargo test --workspace --all-features
 ./scripts/audit-deps.sh
-cargo build --bin aom
-./target/debug/cosmatic goals --manifest examples/minimal/harness.toml
-./target/debug/cosmatic generate --check --manifest examples/minimal/harness.toml
+cargo build --bin bolt-cosmatic
+./target/debug/bolt-cosmatic goals --manifest examples/minimal/harness.toml
+./target/debug/bolt-cosmatic generate --check --manifest examples/minimal/harness.toml
 gear-cable plan --manifest gear-cable.toml
 ```
 
@@ -455,12 +455,12 @@ Create a Link Cable release workflow that only builds and attaches artifacts as 
 
 **Acceptance:** a pre-release can be installed and smoked through the direct channel before any stable pointer moves.
 
-## Task 10 — Rename/position cleanup in cos-matic
+## Task 10 — Rename/position cleanup in bolt-cos-matic
 
 Once Link Cable exists as a working external product:
 
 - [ ] README architecture table should name Link Cable as the distribution substrate.
-- [ ] cos-matic ADRs should retain historical context but point to Link Cable for current distribution implementation.
+- [ ] bolt-cos-matic ADRs should retain historical context but point to Link Cable for current distribution implementation.
 - [ ] Remove any TODOs implying distribution will be implemented inside `crates/orchestrator`.
 - [ ] Keep orchestrator `deploy` semantics separate from Link Cable `distribute` semantics.
 
@@ -475,17 +475,17 @@ cargo test --workspace --all-features
 ./scripts/audit-deps.sh
 cargo build -p gear-cable-core --target wasm32-unknown-unknown
 cargo run -p gear-cable-cli -- doctor
-cargo run -p gear-cable-cli -- plan --manifest examples/cos-matic/gear-cable.toml
+cargo run -p gear-cable-cli -- plan --manifest examples/bolt-cos-matic/gear-cable.toml
 ```
 
-### cos-matic after integration
+### bolt-cos-matic after integration
 
 ```bash
 cargo fmt --all --check
 RUSTFLAGS="-D warnings" cargo clippy --workspace --all-targets --all-features
 cargo test --workspace --all-features
 ./scripts/audit-deps.sh
-./target/debug/cosmatic generate --check --manifest examples/minimal/harness.toml
+./target/debug/bolt-cosmatic generate --check --manifest examples/minimal/harness.toml
 ```
 
 ## Out of scope for the first extraction
@@ -497,16 +497,16 @@ cargo test --workspace --all-features
 - F-Droid repository operation.
 - OCI registry support.
 - Self-updater that mutates a user installation.
-- Replacing cos-matic deploy/orchestrator commands.
+- Replacing bolt-cos-matic deploy/orchestrator commands.
 
 ## Definition of done for extraction v0
 
 - [x] Link Cable repository has green CI.
 - [x] Link Cable has docs/ADRs for the extracted doctrine.
 - [x] `gear-cable-core` validates a release manifest and sovereign-floor policy.
-- [x] `gear-cable-cli plan` works on an cos-matic fixture.
+- [x] `gear-cable-cli plan` works on an bolt-cos-matic fixture.
 - [ ] A local build/checksum flow exists for at least one host platform.
-- [x] cos-matic references Link Cable as the distribution substrate without importing distribution internals.
+- [x] bolt-cos-matic references Link Cable as the distribution substrate without importing distribution internals.
 - [x] No publish command can run accidentally without explicit opt-in.
 
 ## Known risks and mitigations
@@ -515,5 +515,5 @@ cargo test --workspace --all-features
 - **Supply-chain theater:** fail closed when signatures/provenance are required but unavailable.
 - **Secret leakage:** no tokens in config; audit records must exclude usernames, URLs with tokens, and raw env vars.
 - **Semantic confusion with deploy:** reserve rollback for deploy; distribution uses compensate.
-- **cos-matic regression:** integrate only after Link Cable pre-release and run full cosmatic gates.
+- **bolt-cos-matic regression:** integrate only after Link Cable pre-release and run full bolt-cosmatic gates.
 - **Platform sprawl:** add platforms only when a smoke test exists.

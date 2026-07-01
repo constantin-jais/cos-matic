@@ -14,7 +14,7 @@ the two.
 
 ## Decision
 
-A `StubFixer` (selected with `cosmatic_FIXER=stub`) makes one deterministic, harmless
+A `StubFixer` (selected with `BOLT_COSMATIC_FIXER=stub`) makes one deterministic, harmless
 change (appends a line to `SANDBOX_FIXES.md`) and commits it — producing a real
 branch that flows through the rest of the loop, with no LLM and no key.
 

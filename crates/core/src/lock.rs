@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, ParseError, Result};
 
-/// Directory holding `aom`'s bookkeeping, relative to the project root.
+/// Directory holding `bolt-cos-matic` bookkeeping, relative to the project root.
 pub const HARNESS_DIR: &str = ".harness";
 /// Lockfile path relative to the project root.
 pub const LOCK_FILE: &str = ".harness/lock.toml";

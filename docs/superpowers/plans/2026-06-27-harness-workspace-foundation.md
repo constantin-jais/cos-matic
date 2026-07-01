@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Convert the single-crate `cos-matic` repository into a Cargo workspace (`crates/aom` compiler library, `crates/cli` `aom` binary, `crates/orchestrator` stub) without any behavior change, keeping all 45 tests and the drift check green.
+**Goal:** Convert the single-crate `bolt-cos-matic` repository into a Cargo workspace (`crates/core` compiler library, `crates/cli` `bolt-cosmatic` binary, `crates/orchestrator` stub) without any behavior change, keeping all 45 tests and the drift check green.
 
-**Architecture:** A virtual workspace at the repo root. The compiler library (`cos_matic`) loses its CLI concern and its `clap` dependency; the `aom` binary moves to a thin `crates/cli` package that depends on the library; a new empty `crates/orchestrator` library is scaffolded as the home for the future agentic loop (A1+). This is a pure structural refactor — the existing test suite is the regression gate.
+**Architecture:** A virtual workspace at the repo root. The compiler library (`bolt_cos_matic`) loses its CLI concern and its `clap` dependency; the `bolt-cosmatic` binary moves to a thin `crates/cli` package that depends on the library; a new empty `crates/orchestrator` library is scaffolded as the home for the future agentic loop (A1+). This is a pure structural refactor — the existing test suite is the regression gate.
 
 **Tech Stack:** Rust 2024, Cargo workspaces (`resolver = "3"`, `[workspace.dependencies]`, `[workspace.package]`), clap, miette, serde, blake3, toml, tempfile.
 
@@ -14,8 +14,8 @@
 - Zero clippy warnings under `RUSTFLAGS="-D warnings"`; `cargo fmt` clean.
 - **No new runtime dependencies** in A0 — pure restructure. Any future dep is justified in an ADR.
 - No machine-local absolute paths in any versioned file (use repo-relative / `import.meta`-style resolution; here, plain relative paths).
-- The 45 existing tests (42 unit + 3 e2e) MUST stay green; `cosmatic generate --check examples/minimal` MUST stay green (compiler non-regression).
-- `crates/aom` stays clean-room: ADR-0001 remains valid for it; orchestration lives elsewhere.
+- The 45 existing tests (42 unit + 3 e2e) MUST stay green; `bolt-cosmatic generate --check examples/minimal` MUST stay green (compiler non-regression).
+- `crates/core` stays clean-room: ADR-0001 remains valid for it; orchestration lives elsewhere.
 - Determinism preserved (no logic touched).
 
 ## File Structure
@@ -23,14 +23,14 @@
 ```
 Cargo.toml                                  # MODIFY: package → [workspace]
 crates/
-  aom/
-    Cargo.toml                              # CREATE: lib cos_matic, no clap
+  core/
+    Cargo.toml                              # CREATE: lib bolt_cos_matic, no clap
     src/                                    # MOVED from ./src (minus main.rs, cli.rs)
       lib.rs                                # EDIT: drop `mod cli`, `run()`, clap use
       {config,render}/ + *.rs               # MOVED unchanged
     tests/e2e.rs                            # MOVED unchanged from ./tests/e2e.rs
   cli/
-    Cargo.toml                              # CREATE: bin aom, deps cos_matic+clap+miette
+    Cargo.toml                              # CREATE: bin bolt-cosmatic, deps bolt_cos_matic+clap+miette
     src/main.rs                             # CREATE: parse + dispatch (from old lib.rs run())
     src/cli.rs                              # MOVED unchanged from ./src/cli.rs
   orchestrator/
@@ -44,31 +44,31 @@ README.md, CONTRIBUTING.md, LICENSE          # UNCHANGED (stay at repo root)
 
 ---
 
-### Task 1: Split the single crate into `crates/aom` (lib) + `crates/cli` (bin) under a workspace
+### Task 1: Split the single crate into `crates/core` (lib) + `crates/cli` (bin) under a workspace
 
 Atomic refactor — a workspace move cannot be committed in green half-steps, so the whole split is one task ending green. The existing suite is the test.
 
 **Files:**
 
 - Modify: `Cargo.toml` (root → workspace)
-- Create: `crates/aom/Cargo.toml`, `crates/cli/Cargo.toml`, `crates/cli/src/main.rs`
-- Move: `src/` → `crates/aom/src/`, then `main.rs`/`cli.rs` → `crates/cli/`, `tests/` → `crates/aom/tests/`
-- Edit: `crates/aom/src/lib.rs`
+- Create: `crates/core/Cargo.toml`, `crates/cli/Cargo.toml`, `crates/cli/src/main.rs`
+- Move: `src/` → `crates/core/src/`, then `main.rs`/`cli.rs` → `crates/cli/`, `tests/` → `crates/core/tests/`
+- Edit: `crates/core/src/lib.rs`
 
 **Interfaces:**
 
-- Consumes: existing public API `cos_matic::generate::{Action, FileReport, Report, Options, run}` (all `pub`; `Action::label(self) -> &'static str` is `pub`, see `generate.rs:22`).
-- Produces: workspace member `cos-matic` (lib crate `cos_matic`) consumed by `crates/cli` and (later) `crates/orchestrator`; binary `aom` in package `aom-cli`.
+- Consumes: existing public API `bolt_cos_matic::generate::{Action, FileReport, Report, Options, run}` (all `pub`; `Action::label(self) -> &'static str` is `pub`, see `generate.rs:22`).
+- Produces: workspace member `bolt-cos-matic` (lib crate `bolt_cos_matic`) consumed by `crates/cli` and (later) `crates/orchestrator`; binary `bolt-cosmatic` in package `bolt-cos-matic-cli`.
 
 - [ ] **Step 1: Create the crate directories and move the source tree with git**
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
 mkdir -p crates/cli/src crates/orchestrator/src
-git mv src crates/aom/src
-git mv tests crates/aom/tests
-git mv crates/aom/src/main.rs crates/cli/src/main.rs
-git mv crates/aom/src/cli.rs crates/cli/src/cli.rs
+git mv src crates/core/src
+git mv tests crates/core/tests
+git mv crates/core/src/main.rs crates/cli/src/main.rs
+git mv crates/core/src/cli.rs crates/cli/src/cli.rs
 ```
 
 - [ ] **Step 2: Rewrite the root `Cargo.toml` as a virtual workspace**
@@ -78,13 +78,13 @@ Replace the entire contents of `Cargo.toml` with:
 ```toml
 [workspace]
 resolver = "3"
-members = ["crates/aom", "crates/cli"]
+members = ["crates/core", "crates/cli"]
 
 [workspace.package]
 edition = "2024"
 rust-version = "1.95"
 license = "MIT"
-repository = "https://github.com/constantin-jais/cos-matic"
+repository = "https://github.com/constantin-jais/bolt-cos-matic"
 
 [workspace.dependencies]
 blake3 = "1"
@@ -95,18 +95,18 @@ serde_json = "1"
 thiserror = "2"
 toml = "0.8"
 tempfile = "3"
-cos_matic = { path = "crates/aom" }
+bolt_cos_matic = { path = "crates/core" }
 
 [profile.release]
 strip = true
 lto = "thin"
 ```
 
-- [ ] **Step 3: Create `crates/aom/Cargo.toml`** (compiler library, no `clap`)
+- [ ] **Step 3: Create `crates/core/Cargo.toml`** (compiler library, no `clap`)
 
 ```toml
 [package]
-name = "cos-matic"
+name = "bolt-cos-matic"
 version = "0.0.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -117,7 +117,7 @@ keywords = ["ai", "agents", "codegen", "claude", "agents-md"]
 categories = ["command-line-utilities", "development-tools"]
 
 [lib]
-name = "cos_matic"
+name = "bolt_cos_matic"
 path = "src/lib.rs"
 
 [dependencies]
@@ -134,12 +134,12 @@ tempfile.workspace = true
 
 > Note: `readme` is intentionally dropped here (the front-page `README.md` stays at repo root). Re-add a crate-local `readme` when we first publish to crates.io.
 
-- [ ] **Step 4: Edit `crates/aom/src/lib.rs`** — remove the CLI concern from the library
+- [ ] **Step 4: Edit `crates/core/src/lib.rs`** — remove the CLI concern from the library
 
 Replace the file's module/use/`run` region so it reads exactly:
 
 ```rust
-//! cos-matic — a deterministic, agent-agnostic configuration compiler.
+//! bolt-cos-matic — a deterministic, agent-agnostic configuration compiler.
 //!
 //! One declarative source (a TOML manifest + referenced Markdown files) is
 //! compiled into configuration for many AI coding agents (AGENTS.md today;
@@ -173,22 +173,22 @@ pub use error::{Error, Result};
 
 (Removes `mod cli;`, the `use clap::Parser;` / `use cli::{Cli, Command};` lines, and the entire `pub fn run()`.)
 
-- [ ] **Step 5: Create `crates/cli/Cargo.toml`** (the `aom` binary)
+- [ ] **Step 5: Create `crates/cli/Cargo.toml`** (the `bolt-cosmatic` binary)
 
 ```toml
 [package]
-name = "aom-cli"
+name = "bolt-cos-matic-cli"
 version = "0.0.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "aom"
+name = "bolt-cosmatic"
 path = "src/main.rs"
 
 [dependencies]
-cos_matic.workspace = true
+bolt_cos_matic.workspace = true
 clap.workspace = true
 miette.workspace = true
 ```
@@ -196,14 +196,14 @@ miette.workspace = true
 - [ ] **Step 6: Rewrite `crates/cli/src/main.rs`** — parse args, dispatch (logic lifted verbatim from the old `lib.rs::run`)
 
 ```rust
-//! The `aom` binary: parse args, dispatch to the compiler, print a report.
+//! The `bolt-cosmatic` binary: parse args, dispatch to the compiler, print a report.
 
 mod cli;
 
 use clap::Parser;
 use cli::{Cli, Command};
 
-use cos_matic::generate;
+use bolt_cos_matic::generate;
 
 fn main() -> miette::Result<()> {
     let cli = Cli::parse();
@@ -235,7 +235,7 @@ fn main() -> miette::Result<()> {
 - [ ] **Step 7: Build the workspace**
 
 Run: `cargo build --workspace`
-Expected: compiles clean; binary at `target/debug/aom`.
+Expected: compiles clean; binary at `target/debug/bolt-cosmatic`.
 
 - [ ] **Step 8: Run the full test suite (the regression gate)**
 
@@ -247,7 +247,7 @@ Expected: `42 passed` (lib unit) + `3 passed` (e2e) + `0 failed`, identical to b
 ```bash
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo run -p aom-cli -- generate --manifest examples/minimal/harness.toml --check
+cargo run -p bolt-cos-matic-cli -- generate --manifest examples/minimal/harness.toml --check
 ```
 
 Expected: fmt silent (exit 0); clippy clean; drift check prints `ok: 1 target(s) up to date`.
@@ -256,7 +256,7 @@ Expected: fmt silent (exit 0); clippy clean; drift check prints `ok: 1 target(s)
 
 ```bash
 git add -A
-git commit -m "refactor: split cos-matic into a cargo workspace (aom lib + cli bin)"
+git commit -m "refactor: split bolt-cos-matic into a cargo workspace (core lib + bolt-cosmatic cli bin)"
 ```
 
 ---
@@ -272,14 +272,14 @@ The home for A1+ (goals/gates, then incident/issue/dispatch). Additive — keeps
 
 **Interfaces:**
 
-- Consumes: nothing yet (depends on `cos_matic` by path for the future drift gate, but uses none of it in A0).
+- Consumes: nothing yet (depends on `bolt_cos_matic` by path for the future drift gate, but uses none of it in A0).
 - Produces: crate `orchestrator` with `pub const CRATE_NAME: &str` (placeholder anchor that A1 replaces with real modules).
 
 - [ ] **Step 1: Write the failing smoke test** in `crates/orchestrator/src/lib.rs`
 
 ```rust
 //! Orchestrator — the agentic CI/CD control loop built on top of the
-//! `cos_matic` compiler. Phases A1+ add: goals & gates, incident model,
+//! `bolt_cos_matic` compiler. Phases A1+ add: goals & gates, incident model,
 //! GitHub issue bridge, and Claude-Code dispatch. A0 ships only this scaffold.
 
 /// Stable crate identity used by early wiring tests; replaced by real modules in A1.
@@ -307,13 +307,13 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-cos_matic.workspace = true
+bolt_cos_matic.workspace = true
 ```
 
 - [ ] **Step 3: Add the member to the workspace** — edit root `Cargo.toml`:
 
 ```toml
-members = ["crates/aom", "crates/cli", "crates/orchestrator"]
+members = ["crates/core", "crates/cli", "crates/orchestrator"]
 ```
 
 - [ ] **Step 4: Run the orchestrator test**
@@ -324,7 +324,7 @@ Expected: `1 passed` (`workspace_member_links`).
 - [ ] **Step 5: Re-run the whole workspace green**
 
 Run: `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings`
-Expected: all green; clippy clean (the unused `cos_matic` dep is allowed — it is a path dep, not an unused `use`).
+Expected: all green; clippy clean (the unused `bolt_cos_matic` dep is allowed — it is a path dep, not an unused `use`).
 
 - [ ] **Step 6: Commit**
 
@@ -380,7 +380,7 @@ git commit -m "ci: make fmt/clippy/test workspace-aware"
 
 ### Task 4: Record ADR-0006 (workspace + orchestrator charter)
 
-Documents _why_ the workspace exists and why ADR-0001 still binds `crates/aom`. Required by CONTRIBUTING ("any architectural change ships with a new ADR").
+Documents _why_ the workspace exists and why ADR-0001 still binds `crates/core`. Required by CONTRIBUTING ("any architectural change ships with a new ADR").
 
 **Files:**
 
@@ -397,7 +397,7 @@ Accepted (2026-06-27).
 
 ## Context
 
-cos-matic began as a single crate: a clean-room, deterministic
+bolt-cos-matic began as a single crate: a clean-room, deterministic
 configuration compiler whose charter (ADR-0001) explicitly excludes an MCP
 server, a remote registry, and agent orchestration — these were named as
 gold-plating against the teaching goal.
@@ -412,11 +412,11 @@ concern is orthogonal to "compile one source into many agent configs".
 Restructure the repository into a Cargo workspace rather than growing the
 compiler crate:
 
-- `crates/aom` — the compiler library `cos_matic`, **unchanged in spirit
+- `crates/core` — the compiler library `bolt_cos_matic`, **unchanged in spirit
   and still governed by ADR-0001**. It gains no orchestration, no MCP, no
   network dependency. It loses only its CLI wiring (moved out), which sharpens
   its identity as a pure library.
-- `crates/cli` — the `aom` binary; a thin application layer that wires the
+- `crates/cli` — the `bolt-cosmatic` binary; a thin application layer that wires the
   compiler (and, later, the orchestrator) behind a clap CLI.
 - `crates/orchestrator` — the new concern: goals & gates (A1), then the
   incident/issue/dispatch loop (A3+). Its charter is separate from ADR-0001.
@@ -464,7 +464,7 @@ git commit -m "docs(adr): 0006 workspace split and orchestrator charter"
 
 **Type consistency:** `crates/cli/src/main.rs` calls `generate::run`, `generate::Options { manifest_path, check, force }`, `report.files`, `file.action.label()`, `file.path` — all match `generate.rs` (`Options` fields line 56-63; `Report.files` line 51; `FileReport.path/action` line 43-46; `Action::label` line 22). `Cli`/`Command::Generate { manifest, check, force }` match the moved `cli.rs`.
 
-**Risks flagged:** Task 1 is atomic-large by necessity (workspace move); the 45-test suite is its gate. `cargo run` now needs `-p aom-cli` (or a future `default-run`); reflected in Step 9.
+**Risks flagged:** Task 1 is atomic-large by necessity (workspace move); the 45-test suite is its gate. `cargo run` now needs `-p bolt-cos-matic-cli` (or a future `default-run`); reflected in Step 9.
 
 ---
 
@@ -472,4 +472,4 @@ git commit -m "docs(adr): 0006 workspace split and orchestrator charter"
 
 Run this on an isolated **git worktree** (Task 1 breaks `main`'s build mid-refactor, and the user is actively committing to this repo): create it via `superpowers:using-git-worktrees` at execution time, off `origin/main`.
 
-Next plans (separate files, after A0 lands): **A1** goals & gates (`crates/orchestrator`: schema, gate eval, `cosmatic goals report`, `aom gate run`); then **A3+A4** incident→issue (octocrab) → dispatch (`claude -p` in worktree) → PR.
+Next plans (separate files, after A0 lands): **A1** goals & gates (`crates/orchestrator`: schema, gate eval, `bolt-cosmatic goals report`, `bolt-cosmatic gate run`); then **A3+A4** incident→issue (octocrab) → dispatch (`claude -p` in worktree) → PR.

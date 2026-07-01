@@ -10,7 +10,7 @@ know whether a generated file was edited by a human, we must record what the
 tool last wrote. Options considered:
 
 1. **In-band header** comment in each generated file
-   (`<!-- cos-matic:blake3:<hash> -->`).
+   (`<!-- bolt-cos-matic:blake3:<hash> -->`).
 2. **Out-of-band lockfile** (`.harness/lock.toml`) mapping each generated path
    to the BLAKE3 hash of the content the tool last wrote.
 3. Hybrid: header where the format allows comments, plus a lockfile.

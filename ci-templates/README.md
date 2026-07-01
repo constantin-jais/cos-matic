@@ -1,15 +1,15 @@
 # CI templates
 
-Drop-in CI that turns cos-matic's drift detection and goals into an enforced
+Drop-in CI that turns bolt-cos-matic's drift detection and goals into an enforced
 gate (ADR-0010).
 
-## `cos-matic.yml` (GitHub Actions)
+## `bolt-cos-matic.yml` (GitHub Actions)
 
-Copy it to `.github/workflows/cos-matic.yml`. It:
+Copy it to `.github/workflows/bolt-cos-matic.yml`. It:
 
-1. installs `cosmatic`,
-2. runs `cosmatic goals` (hard gates + observability report),
-3. runs `cosmatic generate --check`, which fails if any committed output (`AGENTS.md`,
+1. installs `bolt-cosmatic`,
+2. runs `bolt-cosmatic goals` (hard gates + observability report),
+3. runs `bolt-cosmatic generate --check`, which fails if any committed output (`AGENTS.md`,
    `CLAUDE.md`, `.cursor/rules/*`, …) has drifted from `harness.toml` or a domain
    file.
 
@@ -22,6 +22,6 @@ timestamps — keep it gitignored.)
 The gate is just two commands — port them anywhere:
 
 ```sh
-cosmatic goals            # nonzero exit if a hard gate fails
-cosmatic generate --check # nonzero exit if outputs drifted from the source
+bolt-cosmatic goals            # nonzero exit if a hard gate fails
+bolt-cosmatic generate --check # nonzero exit if outputs drifted from the source
 ```

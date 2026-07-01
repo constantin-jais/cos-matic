@@ -1,8 +1,8 @@
-# Cos-Matic
+# Bolt-Cos-Matic
 
-[![CI](https://github.com/constantin-jais/cos-matic/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/constantin-jais/cos-matic/actions/workflows/ci.yml)
-[![Security](https://github.com/constantin-jais/cos-matic/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/constantin-jais/cos-matic/actions/workflows/security.yml)
-[![Contracts](https://github.com/constantin-jais/cos-matic/actions/workflows/contracts.yml/badge.svg?branch=main)](https://github.com/constantin-jais/cos-matic/actions/workflows/contracts.yml)
+[![CI](https://github.com/constantin-jais/bolt-cos-matic/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/constantin-jais/bolt-cos-matic/actions/workflows/ci.yml)
+[![Security](https://github.com/constantin-jais/bolt-cos-matic/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/constantin-jais/bolt-cos-matic/actions/workflows/security.yml)
+[![Contracts](https://github.com/constantin-jais/bolt-cos-matic/actions/workflows/contracts.yml/badge.svg?branch=main)](https://github.com/constantin-jais/bolt-cos-matic/actions/workflows/contracts.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Layer:** Bolt — Orchestration  
@@ -51,7 +51,7 @@ See:
 
 ## Forge role
 
-`cos-matic` is the Bolt coordination layer: it turns Rumble product intent into safe plans, policy-gated actions, and inspectable execution evidence. It composes Wrench capabilities and Gear substrates instead of exposing a user product UI.
+`bolt-cos-matic` is the Bolt coordination layer: it turns Rumble product intent into safe plans, policy-gated actions, and inspectable execution evidence. It composes Wrench capabilities and Gear substrates instead of exposing a user product UI.
 
 ## Boundary
 
@@ -59,7 +59,7 @@ It must not own product UX, raw extraction, persistent memory, artifact registri
 
 ## Purpose
 
-`cos-matic` is the central orchestrator of the ecosystem. It receives goals, applies policy gates, selects tools, sequences actions, and records decisions.
+`bolt-cos-matic` is the central orchestrator of the ecosystem. It receives goals, applies policy gates, selects tools, sequences actions, and records decisions.
 
 It transforms:
 
@@ -87,7 +87,7 @@ It transforms:
 
 ## Product Vision Challenge
 
-`cos-matic` must stay a deterministic orchestrator, not become an all-purpose agent product. Its value is trust: explicit plans, reversible writes, gates, and auditable outcomes.
+`bolt-cos-matic` must stay a deterministic orchestrator, not become an all-purpose agent product. Its value is trust: explicit plans, reversible writes, gates, and auditable outcomes.
 
 ## Daily Use
 
@@ -97,11 +97,11 @@ Install the CLI locally:
 cargo install --path crates/cli
 ```
 
-Then use `cosmatic` as the session harness:
+Then use `bolt-cosmatic` as the session harness:
 
 ```sh
-cosmatic generate --check --manifest harness.toml
-cosmatic goals --manifest harness.toml
+bolt-cosmatic generate --check --manifest harness.toml
+bolt-cosmatic goals --manifest harness.toml
 ```
 
 This repository dogfoods `harness.toml` to generate `AGENTS.md`, `CLAUDE.md`,

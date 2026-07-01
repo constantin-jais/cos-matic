@@ -6,7 +6,7 @@ Accepted (2026-06-27).
 
 ## Context
 
-Reviewing the never-run live paths (via the `cosmatic loop --dry-run` added alongside)
+Reviewing the never-run live paths (via the `bolt-cosmatic loop --dry-run` added alongside)
 exposed a gap: `dispatch` produces a *local* branch, but `automerge` gates a *PR*.
 With nothing in between, the loop always stopped at automerge — the gate found no
 PR (verdict Unknown, fail-closed). The loop could not complete.

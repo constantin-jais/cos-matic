@@ -6,7 +6,7 @@ Proposed (2026-06-29). Sets the portability contract for every non-Rust surface.
 
 ## Context
 
-The compiler (`crates/aom`) is the portable asset: pure, synchronous, and
+The compiler (`crates/core`) is the portable asset: pure, synchronous, and
 dependency-light (`blake3`, `serde`, `toml`, `miette`) — it compiles to `wasm32`
 with no native dependency. The orchestrator is the opposite: async,
 `octocrab`/`tokio`, GitHub-coupled, holder of the safety envelope. "Build once,
@@ -72,7 +72,7 @@ and O(N) there; testing frequency does not change that exponent.
 
 ### The dogfood argument
 
-cos-matic exists to eliminate one anti-pattern: _"one source of truth,
+bolt-cos-matic exists to eliminate one anti-pattern: _"one source of truth,
 compiled to many targets — never hand-maintain the N outputs."_ Reimplementing
 the tool itself N times in native languages would apply that very anti-pattern
 to the tool. The architecture must eat its own dogfood: the Rust core is the
@@ -86,7 +86,7 @@ chose a shared Rust/native core with native UI, not N reimplementations.
 
 ## Consequences
 
-- **One seam to build:** a pure, I/O-free `compile()` in `aom-core` returning
+- **One seam to build:** a pure, I/O-free `compile()` in `bolt-cos-matic core` returning
   `Vec<RenderedFile>` (the abstraction already exists, ADR: adapter-output-model).
   All filesystem work stays in a thin native wrapper. This improves testability
   today, independent of any binding.
@@ -95,7 +95,7 @@ chose a shared Rust/native core with native UI, not N reimplementations.
   serializable diagnostics) is specified once — see ADR: native-ui-and-binding-matrix.
 - **The orchestrator does not cross.** It stays a server-side daemon; "drive the
   loop from a phone" is a thin API client, not the loop on the device.
-- **A CI gate keeps the core portable:** `cargo build -p aom-core --target
+- **A CI gate keeps the core portable:** `cargo build -p bolt-cos-matic core --target
 wasm32-unknown-unknown` (compile-only). The day a native-only dependency
   enters the core, CI breaks — portability becomes a gate, not a hope.
 - **Honest limit.** Native UI is per-platform and that surface is real (ADR:

@@ -1,4 +1,4 @@
-//! cos-matic — a deterministic, agent-agnostic configuration compiler.
+//! bolt-cos-matic — a deterministic, agent-agnostic configuration compiler.
 //!
 //! One declarative source (a TOML manifest + referenced Markdown files) is
 //! compiled into configuration for many AI coding agents (AGENTS.md today;

@@ -1,6 +1,6 @@
 # Core Values for {{name}}
 
-**Last revised by:** cosmatic init
+**Last revised by:** bolt-cosmatic init
 
 ## Principles
 

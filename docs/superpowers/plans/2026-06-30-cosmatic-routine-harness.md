@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make `cosmatic` usable as a routine local command and make this repository dogfood a root `harness.toml`.
+**Goal:** Make `bolt-cosmatic` usable as a routine local command and make this repository dogfood a root `harness.toml`.
 
 **Architecture:** Keep the change narrow: fix stale binary references, add regression tests around CLI ergonomics, add a root manifest that compiles deterministic agent configuration, and document the session bootstrap. The root manifest uses the existing embedded library and safe-write generator rather than inventing a second configuration path.
 
-**Tech Stack:** Rust 2024 workspace, Cargo integration tests, `cosmatic generate`, shell scripts, Markdown/TOML configuration.
+**Tech Stack:** Rust 2024 workspace, Cargo integration tests, `bolt-cosmatic generate`, shell scripts, Markdown/TOML configuration.
 
 ## Global Constraints
 
@@ -25,26 +25,26 @@
 - Modify: `crates/cli/src/cli.rs`
 
 **Interfaces:**
-- Consumes: existing `CARGO_BIN_EXE_cosmatic` integration-test binary.
-- Produces: regression coverage that refuses stale `--bin aom` script calls and stale help naming.
+- Consumes: existing `CARGO_BIN_EXE_bolt-cosmatic` integration-test binary.
+- Produces: regression coverage that refuses stale `--bin bolt-cosmatic` script calls and stale help naming.
 
 - [ ] **Step 1: Write failing tests**
 
-Add tests that read `scripts/live-loop-smoke.sh` and assert it uses `--bin cosmatic`, and that `cosmatic --help` contains `Usage: cosmatic`.
+Add tests that read `scripts/live-loop-smoke.sh` and assert it uses `--bin bolt-cosmatic`, and that `bolt-cosmatic --help` contains `Usage: bolt-cosmatic`.
 
 - [ ] **Step 2: Run tests to verify failure**
 
-Run: `cargo test -p cos-matic-cli cli_help_uses_cosmatic_name live_loop_smoke_uses_cosmatic_binary -- --nocapture`
+Run: `cargo test -p bolt-cos-matic-cli cli_help_uses_bolt-cosmatic_name live_loop_smoke_uses_bolt-cosmatic_binary -- --nocapture`
 
-Expected: failure because the script still contains `--bin aom`.
+Expected: failure because the script still contains `--bin bolt-cosmatic`.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Replace `--bin aom` with `--bin cosmatic` in `scripts/live-loop-smoke.sh`; set the clap command name to `cosmatic`.
+Replace `--bin bolt-cosmatic` with `--bin bolt-cosmatic` in `scripts/live-loop-smoke.sh`; set the clap command name to `bolt-cosmatic`.
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `cargo test -p cos-matic-cli cli_help_uses_cosmatic_name live_loop_smoke_uses_cosmatic_binary -- --nocapture`
+Run: `cargo test -p bolt-cos-matic-cli cli_help_uses_bolt-cosmatic_name live_loop_smoke_uses_bolt-cosmatic_binary -- --nocapture`
 
 Expected: pass.
 
@@ -59,26 +59,26 @@ Expected: pass.
 - Modify: `crates/cli/tests/cli_behavior.rs`
 
 **Interfaces:**
-- Consumes: `cosmatic generate --manifest harness.toml`.
+- Consumes: `bolt-cosmatic generate --manifest harness.toml`.
 - Produces: a root manifest and generated agent config that can be checked by CI and used by Codex sessions.
 
 - [ ] **Step 1: Write failing test**
 
-Add a test that runs `cosmatic generate --check --manifest <repo>/harness.toml` from the repository root.
+Add a test that runs `bolt-cosmatic generate --check --manifest <repo>/harness.toml` from the repository root.
 
 - [ ] **Step 2: Run test to verify failure**
 
-Run: `cargo test -p cos-matic-cli root_harness_is_present_and_in_sync -- --nocapture`
+Run: `cargo test -p bolt-cos-matic-cli root_harness_is_present_and_in_sync -- --nocapture`
 
 Expected: failure because no root `harness.toml` exists yet.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Add `harness.toml`, `domains/core-values.md`, then run `cosmatic generate --manifest harness.toml` to create committed outputs.
+Add `harness.toml`, `domains/core-values.md`, then run `bolt-cosmatic generate --manifest harness.toml` to create committed outputs.
 
 - [ ] **Step 4: Run test to verify pass**
 
-Run: `cargo test -p cos-matic-cli root_harness_is_present_and_in_sync -- --nocapture`
+Run: `cargo test -p bolt-cos-matic-cli root_harness_is_present_and_in_sync -- --nocapture`
 
 Expected: pass.
 
@@ -90,7 +90,7 @@ Expected: pass.
 - Modify: `CONTRIBUTING.md`
 
 **Interfaces:**
-- Consumes: installed `cosmatic` command or fallback `cargo run --bin cosmatic --`.
+- Consumes: installed `bolt-cosmatic` command or fallback `cargo run --bin bolt-cosmatic --`.
 - Produces: a reproducible session bootstrap and local gate sequence.
 
 - [ ] **Step 1: Add documentation**
@@ -105,8 +105,8 @@ Run:
 cargo fmt --all --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
-cargo run -q --bin cosmatic -- generate --check --manifest harness.toml
-cargo run -q --bin cosmatic -- goals --manifest harness.toml
+cargo run -q --bin bolt-cosmatic -- generate --check --manifest harness.toml
+cargo run -q --bin bolt-cosmatic -- goals --manifest harness.toml
 ```
 
 Expected: all pass.
@@ -115,4 +115,4 @@ Expected: all pass.
 
 Run: `cargo install --path crates/cli`
 
-Expected: `cosmatic --help` works from `/Users/ifi6567/Documents`.
+Expected: `bolt-cosmatic --help` works from `/Users/ifi6567/Documents`.

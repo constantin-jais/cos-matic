@@ -38,8 +38,8 @@ jobs:
             "execution_policy":{"planning_only":true,"allow_execution":false,"requires_human_approval_for_execution":true}
           }
           JSON
-          cargo run -q -p cos-matic-cli -- handoff validate /tmp/canvas-minimal.valid.json --json
-          cargo run -q -p cos-matic-cli -- handoff plan /tmp/canvas-minimal.valid.json --dry-run --json
+          cargo run -q -p bolt-cos-matic-cli -- handoff validate /tmp/canvas-minimal.valid.json --json
+          cargo run -q -p bolt-cos-matic-cli -- handoff plan /tmp/canvas-minimal.valid.json --dry-run --json
 
   dogfood-drift:
     name: Dogfood drift gate
@@ -48,9 +48,9 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Build cosmatic
-        run: cargo build --bin cosmatic
+      - name: Build bolt-cosmatic
+        run: cargo build --bin bolt-cosmatic
       - name: Goals
-        run: ./target/debug/cosmatic goals --manifest examples/minimal/harness.toml
+        run: ./target/debug/bolt-cosmatic goals --manifest examples/minimal/harness.toml
       - name: Drift gate
-        run: ./target/debug/cosmatic generate --check --manifest examples/minimal/harness.toml
+        run: ./target/debug/bolt-cosmatic generate --check --manifest examples/minimal/harness.toml
