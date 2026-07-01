@@ -391,7 +391,7 @@ fn init_multiple_adapters_creates_all_targets() {
 }
 
 #[test]
-fn init_creates_valid_harness_toml_that_aom_generate_accepts() {
+fn init_creates_valid_harness_toml_that_bolt_cosmatic_generate_accepts() {
     let tmp = tempfile::tempdir().unwrap();
     let status = Command::new(COSMATIC)
         .args([
