@@ -52,6 +52,8 @@ requires no repository secret and is not exposed through public CI.
   deploy if dispatch returns a non-owned branch.
 - Branch GC: deletion must be planned from ownership metadata plus expired TTL;
   the GC kill-switch maps to `BOLT_COSMATIC_GC_DISABLED=1` at the live boundary.
+- Candidate selection: multi-attempt autonomy must first reject non-green or
+  sensitive candidates, then prefer small low-risk diffs with coverage evidence.
 - Local LLM smoke: no GitHub secret; LM Studio runs on the operator workstation.
 - `BOLT_COSMATIC_CHECKS_TOKEN` is supplied by the workflow from `github.token`;
   do not create it as a repository secret.

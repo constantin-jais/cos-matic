@@ -11,6 +11,7 @@
 pub mod automerge;
 pub mod branch_gc;
 pub mod branch_policy;
+pub mod candidate_score;
 pub mod deploy;
 pub mod dispatch;
 pub mod forge;

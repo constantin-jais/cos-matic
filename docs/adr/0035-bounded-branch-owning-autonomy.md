@@ -95,9 +95,13 @@ automerge, or deploy.
 collection planner. It only plans deletion for branches with matching ownership
 metadata, expired TTL, delete-policy approval, and available deletion budget.
 
-This ADR does not yet implement multi-attempt scoring, PR selection, or live
-branch deletion. Those are follow-up capabilities built on the branch ownership
-contract.
+`crates/orchestrator/src/candidate_score.rs` defines the first offline candidate
+comparison contract. A candidate must be branch-policy compliant, test-green,
+lint-green, and avoid sensitive files before it can be ranked. Ranking then
+prefers smaller diffs, better coverage, and fewer risk notes.
+
+This ADR does not yet implement PR selection or live branch deletion. Those are
+follow-up capabilities built on the branch ownership contract.
 
 ## Consequences
 
