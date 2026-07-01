@@ -25,7 +25,7 @@ are US-corporation gatekeepers. This is a genuine trade-off, not a hedge.
 ## Decision
 
 The release/distribution gates described here are implemented in the extracted
-[Link Cable](https://github.com/constantin-jais/gear-cable) substrate. cos-matic
+[Link Cable](https://github.com/constantin-jais/gear-cable) substrate. bolt-cos-matic
 keeps the doctrine as origin context and consumes Link Cable externally.
 
 ### Keyless by default — dissolve the static-secret surface
@@ -57,7 +57,7 @@ RustSec advisories plus `cargo deny` for advisories, licenses, and sources. Two
 RustSec findings are temporarily ignored with written reasons in both the script
 and `deny.toml`:
 
-- `RUSTSEC-2023-0071` (`rsa` via `octocrab` → `jsonwebtoken`) — cosmatic does not use
+- `RUSTSEC-2023-0071` (`rsa` via `octocrab` → `jsonwebtoken`) — bolt-cosmatic does not use
   RSA private-key operations directly; no upstream fixed version is available.
 - `RUSTSEC-2025-0057` (`fxhash` via `inquire`) — local interactive prompt path,
   not a network/runtime trust boundary.

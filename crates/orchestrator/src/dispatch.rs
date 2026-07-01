@@ -153,10 +153,10 @@ pub struct ClaudeFixer {
 
 impl Fixer for ClaudeFixer {
     fn attempt(&self, req: &FixRequest) -> Result<FixReport, FixerError> {
-        let branch = format!("aom/fix/issue-{}", req.issue);
+        let branch = format!("bolt/fix/issue-{}", req.issue);
         let wt = self
             .repo_root
-            .join(".aom")
+            .join(".bolt-cos-matic")
             .join("dispatch")
             .join(format!("issue-{}", req.issue));
         let wt_str = wt.to_string_lossy().into_owned();
@@ -260,9 +260,9 @@ fn commit_fix(wt: &Path, message: &str) -> Result<(), FixerError> {
         wt,
         &[
             "-c",
-            "user.name=aom-bot",
+            "user.name=bolt-cosmatic-bot",
             "-c",
-            "user.email=aom-bot@users.noreply.github.com",
+            "user.email=bolt-cosmatic-bot@users.noreply.github.com",
             "commit",
             "-m",
             message,
@@ -291,7 +291,7 @@ fn git_stdout(root: &Path, args: &[&str]) -> Result<String, FixerError> {
 /// trivial, safe change and commits it, so a real branch flows through
 /// publish -> gate -> merge -> deploy. Used to validate the loop's plumbing on a
 /// sandbox before (or without) wiring the real `ClaudeFixer`. Selected with
-/// `cosmatic_FIXER=stub` (ADR: stub-fixer-for-plumbing).
+/// `BOLT_COSMATIC_FIXER=stub` (ADR: stub-fixer-for-plumbing).
 pub struct StubFixer {
     pub repo_root: PathBuf,
 }
@@ -300,10 +300,10 @@ impl Fixer for StubFixer {
     fn attempt(&self, req: &FixRequest) -> Result<FixReport, FixerError> {
         use std::io::Write as _;
 
-        let branch = format!("aom/fix/issue-{}", req.issue);
+        let branch = format!("bolt/fix/issue-{}", req.issue);
         let wt = self
             .repo_root
-            .join(".aom")
+            .join(".bolt-cos-matic")
             .join("dispatch")
             .join(format!("issue-{}", req.issue));
         let wt_str = wt.to_string_lossy().into_owned();
@@ -353,7 +353,7 @@ mod tests {
         fn attempt(&self, req: &FixRequest) -> Result<FixReport, FixerError> {
             self.calls.set(self.calls.get() + 1);
             Ok(FixReport {
-                branch: format!("aom/fix/issue-{}", req.issue),
+                branch: format!("bolt/fix/issue-{}", req.issue),
                 summary: "fake fix".to_string(),
             })
         }
@@ -407,7 +407,7 @@ mod tests {
         let f = FakeFixer::new();
         let r = dispatch(&f, &env(true, vec![repo()]), &req()).unwrap();
         match r {
-            DispatchReport::Attempted { branch, .. } => assert_eq!(branch, "aom/fix/issue-8"),
+            DispatchReport::Attempted { branch, .. } => assert_eq!(branch, "bolt/fix/issue-8"),
             other => panic!("expected an attempt, got {other:?}"),
         }
         assert_eq!(f.calls.get(), 1, "exactly one attempt (circuit-breaker)");

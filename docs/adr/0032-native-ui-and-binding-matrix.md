@@ -26,7 +26,7 @@ legitimately divergent layer.
 
 ### Binding matrix
 
-| Platform | Native UI        | Binding from `aom-core`          | Packaging                      | Sovereign floor                      |
+| Platform | Native UI        | Binding from `bolt-cos-matic core`          | Packaging                      | Sovereign floor                      |
 | -------- | ---------------- | -------------------------------- | ------------------------------ | ------------------------------------ |
 | iOS      | SwiftUI          | UniFFI → Swift                   | `.ipa`                         | ⚠️ App Store global; EU DMA sideload |
 | macOS    | SwiftUI/AppKit   | UniFFI → Swift (shared with iOS) | `.app`/`.dmg` notarized        | direct signed `.dmg`                 |
@@ -64,7 +64,7 @@ a native app must produce byte-identical output — the load-bearing guarantee o
   divergent layer, accepted explicitly.
 - **The binding ABI is specified once:** the types crossing every boundary are
   `RenderedFile { path, content }` plus a serializable diagnostic DTO (miette
-  spans do not cross FFI); see the seam in `aom-core`.
+  spans do not cross FFI); see the seam in `bolt-cos-matic core`.
 - **The error contract is uniform** across Swift/Kotlin/C#/JS via that DTO.
 - **Linux and Android are the first verticals** (D1): Linux for the zero-FFI
   link, Android to exercise the UniFFI boundary against a fully sovereign floor.

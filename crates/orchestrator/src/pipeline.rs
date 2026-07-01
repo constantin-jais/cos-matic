@@ -216,7 +216,7 @@ pub fn append_audit(
 /// The real stages: each wires the corresponding primitive, scope-fenced to the
 /// loop's repo. The forge (octocrab) handles PR/check/merge; only `git push`
 /// stays a subprocess. Exercised live, not in unit tests. The deploy commands
-/// come from the environment, like `cosmatic deploy`.
+/// come from the environment, like `bolt-cosmatic deploy`.
 pub struct RealStages {
     pub repo_root: PathBuf,
     pub forge: GithubForge,
@@ -244,10 +244,10 @@ impl Stages for RealStages {
             body: req.body.clone(),
             repo: req.repo.clone(),
         };
-        // cosmatic_FIXER=stub selects the deterministic no-LLM fixer (validate the loop
+        // BOLT_COSMATIC_FIXER=stub selects the deterministic no-LLM fixer (validate the loop
         // plumbing without an Anthropic key); anything else uses the real Claude.
         let root = self.repo_root.clone();
-        let report = if std::env::var("cosmatic_FIXER").as_deref() == Ok("stub") {
+        let report = if std::env::var("BOLT_COSMATIC_FIXER").as_deref() == Ok("stub") {
             dispatch::dispatch(&dispatch::StubFixer { repo_root: root }, &env, &fix)
         } else {
             dispatch::dispatch(&dispatch::ClaudeFixer { repo_root: root }, &env, &fix)
@@ -420,7 +420,7 @@ mod tests {
 
     #[tokio::test]
     async fn all_green_completes_in_order() {
-        let s = stages(Some("aom/fix/issue-8"), true, true, true);
+        let s = stages(Some("bolt/fix/issue-8"), true, true, true);
         let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0)
             .await
             .unwrap();

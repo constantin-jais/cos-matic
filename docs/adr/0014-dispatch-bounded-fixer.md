@@ -13,18 +13,18 @@ that *modifies code*, so the charter's safety envelope
 
 ## Decision
 
-`cosmatic dispatch` runs a single, hard-bounded attempt and stops at a proposed
+`bolt-cosmatic dispatch` runs a single, hard-bounded attempt and stops at a proposed
 branch. It never gates, merges, or deploys (that is A5).
 
 - **`Fixer` trait** — `ClaudeFixer` (real, headless Claude Code) + `FakeFixer`
   (tests). All envelope logic is proven offline.
-- **Envelope** — kill-switch (`cosmatic_DISPATCH_DISABLED`), scope-fence (a repo
+- **Envelope** — kill-switch (`BOLT_COSMATIC_DISPATCH_DISABLED`), scope-fence (a repo
   allowlist, defaulting to the target repo only), circuit-breaker (one attempt).
 - **Isolation** — the fixer works in a throwaway git worktree on a fresh branch
   off `HEAD`; it never pushes, never opens a PR, never touches `main`.
 - **Zero-PII audit** — every dispatch decision is journaled (action, issue,
   public repo coordinate, outcome, ts); no diffs, no paths, no authors.
-- **Stops at a branch** — a human gates (`cosmatic generate --check`, goals, and CI) and merges the proposed
+- **Stops at a branch** — a human gates (`bolt-cosmatic generate --check`, goals, and CI) and merges the proposed
   branch. Autonomy goes as far as *proposing* a fix, never landing it.
 
 ## Consequences

@@ -1,104 +1,48 @@
 name: orchestrator-loop
 
-# The autonomous loop NEVER runs on push or PR — only when a human deliberately
-# dispatches it. Safe by default (dry-run); the live path is fenced to a repo
-# explicitly flagged as a throwaway sandbox.
+# Engine repository smoke only. The autonomous live loop belongs in the public
+# sandbox harness (`bolt-harness`), not in the canonical engine repository.
+# This workflow is intentionally manual and read-only.
 on:
   workflow_dispatch:
     inputs:
       issue:
-        description: "Issue number to drive the loop"
+        description: "Issue number to drive the dry-run loop"
         required: true
         type: string
-      mode:
-        description: "dry-run (safe, read-only) or live (outward — sandbox only)"
+      title:
+        description: "Short title handed to the loop"
         required: true
-        default: dry-run
-        type: choice
-        options:
-          - dry-run
-          - live
-      fixer:
-        description: "claude (real LLM, needs ANTHROPIC_API_KEY) or stub (deterministic, no key)"
-        required: true
-        default: claude
-        type: choice
-        options:
-          - claude
-          - stub
+        default: "ci: autonomous loop"
+        type: string
 
-# Scoped bot identity. This `permissions` block IS the fine-grained scope: the
-# ephemeral github-actions[bot] token, narrowed to exactly what the loop touches.
-# Nothing here is a personal PAT — for dry-run, this is the whole credential story.
 permissions:
-  contents: write # publish: push the fix branch
-  issues: write # incident -> issue, close
-  pull-requests: write # publish/automerge: open + merge the PR
-  checks: read # automerge gate: read the PR's check runs via github.token
-  statuses: read # ditto: gh's statusCheckRollup also touches commit statuses
+  contents: read
+  issues: read
+  pull-requests: read
+  checks: read
+  statuses: read
 
-# Never overlap autonomous runs.
 concurrency:
-  group: orchestrator-loop
+  group: orchestrator-loop-dry-run
   cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  loop:
+  dry-run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          fetch-depth: 0
-          # Use the bot PAT when present so the loop's `git push` triggers CI
-          # (the built-in github.token does not); falls back to it for dry-run.
-          token: ${{ secrets.AOM_BOT_TOKEN || github.token }}
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Build aom
-        run: cargo build --bin aom
-
-      # --- dry-run: read-only. github.token is sufficient; no Claude needed. ---
-      - name: Loop (dry-run)
-        if: inputs.mode == 'dry-run'
+      - name: Build bolt-cosmatic
+        run: cargo build --bin bolt-cosmatic
+      - name: Loop dry-run
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
-          ./target/debug/aom loop --dry-run
+          ./target/debug/bolt-cosmatic loop --dry-run
           --issue "${{ inputs.issue }}"
-          --title "ci: autonomous loop"
-
-      # --- live: outward + irreversible. Fenced to an explicit sandbox repo. ---
-      - name: Guard — live is sandbox-only
-        if: inputs.mode == 'live' && vars.AOM_SANDBOX != 'true'
-        run: |
-          echo "::error::live mode refused. Set repository variable AOM_SANDBOX=true to confirm this is a disposable sandbox (never the real repo)."
-          exit 1
-      - name: Install Claude Code
-        if: inputs.mode == 'live' && vars.AOM_SANDBOX == 'true' && inputs.fixer == 'claude'
-        run: npm install -g @anthropic-ai/claude-code
-      - name: Loop (live)
-        if: inputs.mode == 'live' && vars.AOM_SANDBOX == 'true'
-        env:
-          # Two tokens, each at its minimal role. The PAT does the writes —
-          # push (triggers CI, via the checkout token below), open the PR, merge —
-          # because a user PAT is not subject to the "Actions may create/approve
-          # PRs" repo restriction. The runner's github.token is handed to the gate
-          # alone (AOM_CHECKS_TOKEN) to *read* check status, so the PAT needs no
-          # Checks scope and the repo needs no Actions-can-approve-PRs setting.
-          GITHUB_TOKEN: ${{ secrets.AOM_BOT_TOKEN }}
-          AOM_CHECKS_TOKEN: ${{ github.token }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # claude (real LLM) or stub (deterministic, no Anthropic key needed).
-          AOM_FIXER: ${{ inputs.fixer }}
-          # No-op deploy: exercise the wiring, never real infrastructure.
-          AOM_DEPLOY_CANARY: "true"
-          AOM_DEPLOY_PROMOTE: "true"
-          AOM_DEPLOY_ROLLBACK: "true"
-          AOM_DEPLOY_SMOKE: "true"
-        run: >-
-          ./target/debug/aom loop
-          --issue "${{ inputs.issue }}"
-          --title "ci: autonomous loop"
+          --title "${{ inputs.title }}"

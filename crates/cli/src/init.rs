@@ -1,4 +1,4 @@
-//! Interactive setup wizard for cos-matic projects (`cosmatic init`).
+//! Interactive setup wizard for bolt-cos-matic projects (`bolt-cosmatic init`).
 //!
 //! Scaffolds a new project with optional L0–L3 levels, adapters, and safe-write
 //! handling (never clobbers existing files).
@@ -86,25 +86,25 @@ profile = "default"
         TEMPLATE.to_string() // No placeholders; as-is.
     }
 
-    /// Render .cosmatic/adr-required.toml template.
+    /// Render .bolt-cosmatic/adr-required.toml template.
     fn render_adr_required_toml(&self) -> String {
         const TEMPLATE: &str = include_str!("../templates/policies/adr-required.toml");
         TEMPLATE.to_string() // No placeholders; as-is.
     }
 
-    /// Render .cosmatic/language-ownership.toml template.
+    /// Render .bolt-cosmatic/language-ownership.toml template.
     fn render_language_ownership_toml(&self) -> String {
         const TEMPLATE: &str = include_str!("../templates/policies/language-ownership.toml");
         TEMPLATE.to_string() // No placeholders; as-is.
     }
 
-    /// Render .cosmatic/frontend-strict.toml template.
+    /// Render .bolt-cosmatic/frontend-strict.toml template.
     fn render_frontend_strict_toml(&self) -> String {
         const TEMPLATE: &str = include_str!("../templates/policies/frontend-strict.toml");
         TEMPLATE.to_string() // No placeholders; as-is.
     }
 
-    /// Render .cosmatic/shell-debt.toml template.
+    /// Render .bolt-cosmatic/shell-debt.toml template.
     fn render_shell_debt_toml(&self) -> String {
         const TEMPLATE: &str = include_str!("../templates/policies/shell-debt.toml");
         TEMPLATE.to_string() // No placeholders; as-is.
@@ -315,7 +315,7 @@ pub fn scaffold(config: &InitConfig, target_dir: &Path) -> Result<()> {
     let harness_path = target_dir.join("harness.toml");
     let domains_dir = target_dir.join("domains");
     let core_values_path = domains_dir.join("core-values.md");
-    let policy_dir = target_dir.join(".cosmatic");
+    let policy_dir = target_dir.join(".bolt-cosmatic");
     let adr_policy_path = policy_dir.join("adr-required.toml");
     let language_policy_path = policy_dir.join("language-ownership.toml");
     let frontend_policy_path = policy_dir.join("frontend-strict.toml");
@@ -332,16 +332,16 @@ pub fn scaffold(config: &InitConfig, target_dir: &Path) -> Result<()> {
         skipped.push("domains/core-values.md");
     }
     if adr_policy_path.exists() {
-        skipped.push(".cosmatic/adr-required.toml");
+        skipped.push(".bolt-cosmatic/adr-required.toml");
     }
     if language_policy_path.exists() {
-        skipped.push(".cosmatic/language-ownership.toml");
+        skipped.push(".bolt-cosmatic/language-ownership.toml");
     }
     if frontend_policy_path.exists() {
-        skipped.push(".cosmatic/frontend-strict.toml");
+        skipped.push(".bolt-cosmatic/frontend-strict.toml");
     }
     if shell_policy_path.exists() {
-        skipped.push(".cosmatic/shell-debt.toml");
+        skipped.push(".bolt-cosmatic/shell-debt.toml");
     }
     if config.autonomy_level != "L0" && workflow_path.exists() {
         skipped.push(".github/workflows/orchestrator-loop.yml");
@@ -376,7 +376,7 @@ pub fn scaffold(config: &InitConfig, target_dir: &Path) -> Result<()> {
         println!("created  {}", core_values_path.display());
     }
 
-    // Create .cosmatic/adr-required.toml if not present.
+    // Create .bolt-cosmatic/adr-required.toml if not present.
     if !adr_policy_path.exists() {
         fs::create_dir_all(&policy_dir)
             .into_diagnostic()
@@ -389,7 +389,7 @@ pub fn scaffold(config: &InitConfig, target_dir: &Path) -> Result<()> {
         println!("created  {}", adr_policy_path.display());
     }
 
-    // Create .cosmatic/language-ownership.toml if not present.
+    // Create .bolt-cosmatic/language-ownership.toml if not present.
     if !language_policy_path.exists() {
         fs::create_dir_all(&policy_dir)
             .into_diagnostic()
@@ -402,7 +402,7 @@ pub fn scaffold(config: &InitConfig, target_dir: &Path) -> Result<()> {
         println!("created  {}", language_policy_path.display());
     }
 
-    // Create .cosmatic/frontend-strict.toml if not present.
+    // Create .bolt-cosmatic/frontend-strict.toml if not present.
     if !frontend_policy_path.exists() {
         fs::create_dir_all(&policy_dir)
             .into_diagnostic()
@@ -415,7 +415,7 @@ pub fn scaffold(config: &InitConfig, target_dir: &Path) -> Result<()> {
         println!("created  {}", frontend_policy_path.display());
     }
 
-    // Create .cosmatic/shell-debt.toml if not present.
+    // Create .bolt-cosmatic/shell-debt.toml if not present.
     if !shell_policy_path.exists() {
         fs::create_dir_all(&policy_dir)
             .into_diagnostic()
@@ -453,29 +453,33 @@ pub fn print_checklist(config: &InitConfig) {
     println!();
 
     println!("[ ] 1. Commit and push this scaffold to your repository.");
-    println!("[ ] 2. Review the generated harness.toml, domains/, and .cosmatic/.");
+    println!("[ ] 2. Review the generated harness.toml, domains/, and .bolt-cosmatic/.");
     println!(
-        "[ ] 3. Run: cosmatic inspect adr-required --root . --policy .cosmatic/adr-required.toml"
+        "[ ] 3. Run: bolt-cosmatic inspect adr-required --root . --policy .bolt-cosmatic/adr-required.toml"
     );
     println!(
-        "[ ] 4. Run: cosmatic inspect language-ownership --root . --policy .cosmatic/language-ownership.toml"
+        "[ ] 4. Run: bolt-cosmatic inspect language-ownership --root . --policy .bolt-cosmatic/language-ownership.toml"
     );
     println!(
-        "[ ] 5. Run: cosmatic inspect frontend-strict --root . --policy .cosmatic/frontend-strict.toml"
+        "[ ] 5. Run: bolt-cosmatic inspect frontend-strict --root . --policy .bolt-cosmatic/frontend-strict.toml"
     );
-    println!("[ ] 6. Run: cosmatic inspect shell-debt --root . --policy .cosmatic/shell-debt.toml");
-    println!("[ ] 7. Run: cosmatic goals --manifest harness.toml");
-    println!("[ ] 8. Run: cosmatic generate --check");
+    println!(
+        "[ ] 6. Run: bolt-cosmatic inspect shell-debt --root . --policy .bolt-cosmatic/shell-debt.toml"
+    );
+    println!("[ ] 7. Run: bolt-cosmatic goals --manifest harness.toml");
+    println!("[ ] 8. Run: bolt-cosmatic generate --check");
 
     if config.autonomy_level != "L0" {
         println!("[ ] 9. If this is a sandbox repo (not your real repo),");
-        println!("       set repository variable cosmatic_SANDBOX=true in Settings > Variables.");
+        println!(
+            "       set repository variable BOLT_HARNESS_SANDBOX=true in Settings > Variables."
+        );
         if config.autonomy_level != "L1" {
             println!("[ ] 10. Set repository secrets:");
-            println!("       - cosmatic_BOT_TOKEN (fine-grained PAT for git push, PR, merge)");
+            println!("       - BOLT_COSMATIC_BOT_TOKEN (fine-grained PAT for git push, PR, merge)");
             println!("       - ANTHROPIC_API_KEY (only if using fixer=claude)");
             println!(
-                "       Note: cosmatic_CHECKS_TOKEN is supplied by the workflow from github.token;"
+                "       Note: BOLT_COSMATIC_CHECKS_TOKEN is supplied by the workflow from github.token;"
             );
             println!("       do not create it as a repository secret.");
         }

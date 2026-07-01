@@ -19,7 +19,7 @@ on the paradigm alone is not possible.
 
 ## Decision
 
-Build cos-matic anyway, but be honest about _why_ and what success means.
+Build bolt-cos-matic anyway, but be honest about _why_ and what success means.
 
 **Primary goal: learning, in order to teach.** The value is depth of
 understanding gained by reconstructing the system clean-room, and the

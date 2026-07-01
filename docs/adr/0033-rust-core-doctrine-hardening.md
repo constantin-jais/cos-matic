@@ -55,7 +55,7 @@ the exception should live, and how it will be removed or contained.
 
 - The embedded content library now carries strict Rust-first built-ins that can
   be compiled into `AGENTS.md`, `CLAUDE.md`, Cursor rules, or future adapters.
-- New `cosmatic init` projects inherit Rust-core doctrine by default instead of
+- New `bolt-cosmatic init` projects inherit Rust-core doctrine by default instead of
   a generic multi-stack posture.
 - TypeScript backend, durable shell, and hand-written Zig become explicit
   exceptions rather than silent defaults.

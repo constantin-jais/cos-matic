@@ -1,5 +1,5 @@
 [package]
-name = "cos-matic"
+name = "bolt-cos-matic"
 builtins = [
   "four-axes",
   "stack-authority",

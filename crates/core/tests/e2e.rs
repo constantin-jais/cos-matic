@@ -4,8 +4,8 @@
 use std::fs;
 use std::path::Path;
 
-use cos_matic::Error;
-use cos_matic::generate::{self, Action, Options};
+use bolt_cos_matic::Error;
+use bolt_cos_matic::generate::{self, Action, Options};
 
 fn opts(manifest: &Path, check: bool, force: bool) -> Options {
     Options {

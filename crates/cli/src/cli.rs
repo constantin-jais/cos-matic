@@ -1,4 +1,4 @@
-//! Command-line surface for the `cosmatic` binary.
+//! Command-line surface for the `bolt-cosmatic` binary.
 
 use std::path::PathBuf;
 
@@ -6,9 +6,9 @@ use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "cosmatic",
+    name = "bolt-cosmatic",
     version,
-    about = "cos-matic: compile one source into many AI-agent configs (safe-write, drift-aware)."
+    about = "bolt-cos-matic: compile one source into many AI-agent configs (safe-write, drift-aware)."
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -90,7 +90,7 @@ pub enum Command {
 
     /// Autonomously merge a branch — only with attached green evidence (never red).
     Automerge {
-        /// Branch to gate-and-merge (e.g. `aom/fix/issue-8`).
+        /// Branch to gate-and-merge (e.g. `bolt/fix/issue-8`).
         #[arg(long)]
         branch: String,
 
@@ -101,7 +101,7 @@ pub enum Command {
 
     /// Canary-deploy a target, smoke-test it, and promote or auto-rollback.
     Deploy {
-        /// Version/ref to deploy (exported to the deploy command as `cosmatic_TARGET`).
+        /// Version/ref to deploy (exported to the deploy command as `BOLT_COSMATIC_TARGET`).
         #[arg(long)]
         target: String,
 
@@ -139,7 +139,7 @@ pub enum Command {
         max_iterations: u32,
     },
 
-    /// Initialize a new cos-matic project (interactive setup wizard).
+    /// Initialize a new bolt-cos-matic project (interactive setup wizard).
     Init {
         /// Project name (skips prompt if provided).
         #[arg(long)]
@@ -170,7 +170,7 @@ pub enum LibraryAction {
 
     /// Print a built-in domain's content.
     Show {
-        /// Built-in name (see `cosmatic library list`).
+        /// Built-in name (see `bolt-cosmatic library list`).
         name: String,
     },
 }

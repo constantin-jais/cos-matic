@@ -1,4 +1,4 @@
-# Contributing to cos-matic
+# Contributing to bolt-cos-matic
 
 This is a learning-first, clean-room project. The _reasoning_ is part of the
 artifact: the goal is that anyone can read the repo and understand not just
@@ -34,11 +34,11 @@ A quick local pass before opening a PR:
 cargo fmt --all --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
-cosmatic generate --check --manifest harness.toml
-cosmatic goals --manifest harness.toml
+bolt-cosmatic generate --check --manifest harness.toml
+bolt-cosmatic goals --manifest harness.toml
 ```
 
-If `cosmatic` is not installed, use `cargo run -q --bin cosmatic -- <command>`
+If `bolt-cosmatic` is not installed, use `cargo run -q --bin bolt-cosmatic -- <command>`
 for the two harness commands, then install it before treating it as routine.
 
 ## Reporting

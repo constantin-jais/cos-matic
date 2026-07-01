@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 /// Visible marker embedded in an issue body so the incident is discoverable.
-pub const MARKER_PREFIX: &str = "aom-fingerprint:";
+pub const MARKER_PREFIX: &str = "bolt-cosmatic-fingerprint:";
 
 /// A structured incident. `title`/`body` are human-facing (go to the issue);
 /// they are deliberately NOT written to the journal.
@@ -57,9 +57,9 @@ pub fn issue_body_with_marker(body: &str, fingerprint: &str) -> String {
     format!("{body}\n\n<sub>{MARKER_PREFIX} `{fingerprint}`</sub>\n")
 }
 
-/// Default journal directory: `~/.aom`.
+/// Default journal directory: `~/.bolt-cos-matic`.
 pub fn default_journal_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".aom"))
+    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".bolt-cos-matic"))
 }
 
 /// What we persist per incident — fingerprint/kind/severity/timestamp only.

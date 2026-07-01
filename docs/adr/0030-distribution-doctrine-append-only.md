@@ -26,7 +26,7 @@ undone — the most dangerous false belief in a release pipeline.
 Distribution gets its **own doctrine**, sharing the envelope's _principles_
 (evidence gate, scope-fence, circuit-breaker, zero-PII audit, kill-switch) but
 **not** the deploy _flow_. Its implementation home is extracted to
-[Link Cable](https://github.com/constantin-jais/gear-cable). cos-matic remains
+[Link Cable](https://github.com/constantin-jais/gear-cable). bolt-cos-matic remains
 the first consumer; it must call the external distribution substrate rather than
 copy distribution internals back into the orchestrator.
 

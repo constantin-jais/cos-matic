@@ -1,16 +1,16 @@
 [package]
-name = "cos-matic-cli"
+name = "bolt-cos-matic-cli"
 version = "0.0.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "cosmatic"
+name = "bolt-cosmatic"
 path = "src/main.rs"
 
 [dependencies]
-cos-matic.workspace = true
+bolt-cos-matic.workspace = true
 clap.workspace = true
 inquire.workspace = true
 miette.workspace = true

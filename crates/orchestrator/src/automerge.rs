@@ -344,7 +344,7 @@ mod tests {
     }
     fn req() -> MergeRequest {
         MergeRequest {
-            branch: "aom/fix/issue-8".into(),
+            branch: "bolt/fix/issue-8".into(),
             repo: repo(),
         }
     }
@@ -495,7 +495,7 @@ mod tests {
     #[tokio::test]
     async fn forge_gate_all_pass_is_green() {
         let forge = FakeForge::new()
-            .with_pr("aom/fix/issue-8", 1)
+            .with_pr("bolt/fix/issue-8", 1)
             .with_checks(&[("ci", "pass"), ("lint", "pass")]);
         assert_eq!(
             fast_gate(&forge).verdict(&req()).await.unwrap(),
@@ -506,7 +506,7 @@ mod tests {
     #[tokio::test]
     async fn forge_gate_a_fail_is_red() {
         let forge = FakeForge::new()
-            .with_pr("aom/fix/issue-8", 1)
+            .with_pr("bolt/fix/issue-8", 1)
             .with_checks(&[("ci", "pass"), ("lint", "fail")]);
         assert!(matches!(
             fast_gate(&forge).verdict(&req()).await.unwrap(),
@@ -516,7 +516,7 @@ mod tests {
 
     #[tokio::test]
     async fn forge_merger_merges_the_open_pr() {
-        let forge = FakeForge::new().with_pr("aom/fix/issue-8", 7);
+        let forge = FakeForge::new().with_pr("bolt/fix/issue-8", 7);
         let r = ForgeMerger::new(&forge).merge(&req()).await.unwrap();
         assert!(r.contains("#7"), "merges the looked-up PR number");
     }

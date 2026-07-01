@@ -157,7 +157,7 @@ pub async fn open_or_reuse<F: Forge + ?Sized>(
 /// status needs a token with Checks read access, which the write token (a
 /// fine-grained PAT that pushes/opens/merges) may lack, while that PAT can do
 /// what a CI runner's `github.token` cannot (open a PR). `client` (write token)
-/// serves PR list/create/merge; `checks_client` (`cosmatic_CHECKS_TOKEN`, falling
+/// serves PR list/create/merge; `checks_client` (`BOLT_COSMATIC_CHECKS_TOKEN`, falling
 /// back to `client`) serves `list_check_runs` only.
 pub struct GithubForge {
     client: Octocrab,
@@ -166,7 +166,7 @@ pub struct GithubForge {
 
 impl GithubForge {
     /// Build from a token in `GITHUB_TOKEN` or `GH_TOKEN` (never from `gh`), with
-    /// an optional dedicated checks-read token in `cosmatic_CHECKS_TOKEN`.
+    /// an optional dedicated checks-read token in `BOLT_COSMATIC_CHECKS_TOKEN`.
     pub fn from_env() -> Result<Self, ForgeError> {
         let token = std::env::var("GITHUB_TOKEN")
             .or_else(|_| std::env::var("GH_TOKEN"))
@@ -180,7 +180,7 @@ impl GithubForge {
             .personal_token(token)
             .build()
             .map_err(|e| ForgeError(format!("octocrab build: {e}")))?;
-        let checks_client = match std::env::var("cosmatic_CHECKS_TOKEN") {
+        let checks_client = match std::env::var("BOLT_COSMATIC_CHECKS_TOKEN") {
             Ok(t) if !t.is_empty() => Octocrab::builder()
                 .personal_token(t)
                 .build()
@@ -494,16 +494,16 @@ mod tests {
 
     #[test]
     fn parse_remote_ssh_and_https() {
-        let a = RepoId::parse_remote("git@github.com:constantin-jais/cos-matic.git").unwrap();
+        let a = RepoId::parse_remote("git@github.com:constantin-jais/bolt-cos-matic.git").unwrap();
         assert_eq!(
             a,
             RepoId {
                 owner: "constantin-jais".into(),
-                name: "cos-matic".into()
+                name: "bolt-cos-matic".into()
             }
         );
-        let b = RepoId::parse_remote("https://github.com/constantin-jais/cos-matic").unwrap();
-        assert_eq!(b.name, "cos-matic");
+        let b = RepoId::parse_remote("https://github.com/constantin-jais/bolt-cos-matic").unwrap();
+        assert_eq!(b.name, "bolt-cos-matic");
         assert!(RepoId::parse_remote("ftp://nope").is_none());
     }
 

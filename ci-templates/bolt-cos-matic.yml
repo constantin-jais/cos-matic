@@ -1,9 +1,9 @@
-# Reusable CI gate for projects that use cos-matic (ADR-0010).
+# Reusable CI gate for projects that use bolt-cos-matic (ADR-0010).
 #
-# Copy this to `.github/workflows/cos-matic.yml` in your repository. It fails
+# Copy this to `.github/workflows/bolt-cos-matic.yml` in your repository. It fails
 # the build if your committed agent configs have drifted from `harness.toml`, or
 # if a hard-gate goal is not met.
-name: cos-matic
+name: bolt-cos-matic
 
 on:
   push:
@@ -17,15 +17,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2 # cache the install build across runs
 
-      - name: Install cos-matic
+      - name: Install bolt-cos-matic
         # Pin to a released tag once available (append `--tag vX.Y.Z`); until then
-        # this tracks the default branch. Once on crates.io: cargo install cos-matic
-        run: cargo install --locked --git https://github.com/constantin-jais/cos-matic
+        # this tracks the default branch. Once on crates.io: cargo install bolt-cos-matic
+        run: cargo install --locked --git https://github.com/constantin-jais/bolt-cos-matic
 
       # `generate --check` also enforces hard gates, but a dedicated `goals` step
       # gives a clean, separate report (and surfaces observability metrics).
       - name: Goals
-        run: cosmatic goals
+        run: bolt-cosmatic goals
 
       - name: Drift gate (committed outputs must match the source)
-        run: cosmatic generate --check
+        run: bolt-cosmatic generate --check

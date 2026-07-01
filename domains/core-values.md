@@ -1,6 +1,6 @@
-# cos-matic Session Doctrine
+# bolt-cos-matic Session Doctrine
 
-- Treat `cosmatic` as the local source of truth for agent configuration, gates,
+- Treat `bolt-cosmatic` as the local source of truth for agent configuration, gates,
   and repeatable session bootstrap.
 - Start work from observed repository state: git status, generated-config drift,
   declared goals, then targeted tests.

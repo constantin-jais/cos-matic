@@ -8,7 +8,7 @@ set -euo pipefail
 # soon as upstream fixes are available.
 
 ignored_advisories=(
-  # Transitive via octocrab -> jsonwebtoken -> rsa; cosmatic does not use RSA private
+  # Transitive via octocrab -> jsonwebtoken -> rsa; bolt-cosmatic does not use RSA private
   # keys directly, and no fixed upstream version is available yet.
   RUSTSEC-2023-0071
   # Transitive via inquire; local interactive prompts only, not a runtime trust
