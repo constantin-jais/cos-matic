@@ -87,7 +87,9 @@ protections enforce repository ownership boundaries.
 
 `crates/orchestrator/src/branch_policy.rs` defines the first offline-enforced
 branch ownership policy. It validates create/push/delete branch names before any
-future live operation should touch GitHub.
+future live operation should touch GitHub. The real dispatch path now emits
+structured attempt branches and the loop validates the branch before publish,
+automerge, or deploy.
 
 This ADR does not yet implement multi-attempt scoring, PR selection, or garbage
 collection. Those are follow-up capabilities built on the branch ownership

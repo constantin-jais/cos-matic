@@ -48,7 +48,8 @@ requires no repository secret and is not exposed through public CI.
 - Dry-run: built-in `github.token`, read-only workflow permissions.
 - Live public harness: sandbox-only fine-grained PAT, never a broad human token.
 - Branch autonomy: only branches inside the agent-owned namespace may be created,
-  pushed, or deleted.
+  pushed, or deleted. The loop fails closed before `git push`, automerge, or
+  deploy if dispatch returns a non-owned branch.
 - Local LLM smoke: no GitHub secret; LM Studio runs on the operator workstation.
 - `BOLT_COSMATIC_CHECKS_TOKEN` is supplied by the workflow from `github.token`;
   do not create it as a repository secret.

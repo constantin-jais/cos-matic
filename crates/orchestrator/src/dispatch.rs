@@ -9,6 +9,7 @@ use std::process::Command;
 
 use serde::Serialize;
 
+use crate::branch_policy::AttemptBranch;
 use crate::forge::RepoId;
 
 /// What the fixer is asked to address.
@@ -153,7 +154,7 @@ pub struct ClaudeFixer {
 
 impl Fixer for ClaudeFixer {
     fn attempt(&self, req: &FixRequest) -> Result<FixReport, FixerError> {
-        let branch = format!("bolt/fix/issue-{}", req.issue);
+        let branch = attempt_branch(req)?;
         let wt = self
             .repo_root
             .join(".bolt-cos-matic")
@@ -218,6 +219,12 @@ impl Fixer for ClaudeFixer {
             summary: format!("fixer ran and committed in an isolated worktree ({wt_str})"),
         })
     }
+}
+
+fn attempt_branch(req: &FixRequest) -> Result<String, FixerError> {
+    AttemptBranch::new(&format!("issue-{}", req.issue), req.issue, 1)
+        .map(|b| b.as_str().to_string())
+        .map_err(|e| FixerError(format!("branch policy: {e}")))
 }
 
 fn run_git(root: &Path, args: &[&str]) -> Result<(), FixerError> {
@@ -300,7 +307,7 @@ impl Fixer for StubFixer {
     fn attempt(&self, req: &FixRequest) -> Result<FixReport, FixerError> {
         use std::io::Write as _;
 
-        let branch = format!("bolt/fix/issue-{}", req.issue);
+        let branch = attempt_branch(req)?;
         let wt = self
             .repo_root
             .join(".bolt-cos-matic")
@@ -353,7 +360,7 @@ mod tests {
         fn attempt(&self, req: &FixRequest) -> Result<FixReport, FixerError> {
             self.calls.set(self.calls.get() + 1);
             Ok(FixReport {
-                branch: format!("bolt/fix/issue-{}", req.issue),
+                branch: attempt_branch(req)?,
                 summary: "fake fix".to_string(),
             })
         }
@@ -407,7 +414,9 @@ mod tests {
         let f = FakeFixer::new();
         let r = dispatch(&f, &env(true, vec![repo()]), &req()).unwrap();
         match r {
-            DispatchReport::Attempted { branch, .. } => assert_eq!(branch, "bolt/fix/issue-8"),
+            DispatchReport::Attempted { branch, .. } => {
+                assert_eq!(branch, "bolt/run/issue-8/issue-8/attempt-1")
+            }
             other => panic!("expected an attempt, got {other:?}"),
         }
         assert_eq!(f.calls.get(), 1, "exactly one attempt (circuit-breaker)");

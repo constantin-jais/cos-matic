@@ -14,6 +14,7 @@ use std::process::Command;
 use async_trait::async_trait;
 use serde::Serialize;
 
+use crate::branch_policy::BranchPolicy;
 use crate::forge::{Forge, GithubForge, RepoId};
 use crate::{automerge, deploy, dispatch};
 
@@ -126,6 +127,7 @@ pub async fn run_loop<S: Stages + ?Sized>(
             });
         }
     };
+    validate_agent_branch(&branch)?;
     if !stages.publish(&branch, req).await? {
         return Ok(LoopOutcome::Stopped {
             stage: "publish",
@@ -145,6 +147,12 @@ pub async fn run_loop<S: Stages + ?Sized>(
         });
     }
     Ok(LoopOutcome::Completed { branch })
+}
+
+fn validate_agent_branch(branch: &str) -> Result<(), LoopError> {
+    BranchPolicy::bolt_default()
+        .validate_push(branch)
+        .map_err(|e| LoopError(format!("branch-policy: {e}")))
 }
 
 /// Run the loop, retrying each time a stage stops, until it completes or the
@@ -260,6 +268,7 @@ impl Stages for RealStages {
     }
 
     async fn publish(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError> {
+        validate_agent_branch(branch)?;
         // Push the local fix branch, then open a PR so the gate has a target.
         // Force: the fix branch is the orchestrator's own throwaway, recreated
         // fresh off HEAD each attempt, so it must overwrite any stale branch a
@@ -298,6 +307,7 @@ impl Stages for RealStages {
     }
 
     async fn automerge(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError> {
+        validate_agent_branch(branch)?;
         let env = automerge::MergeEnvelope {
             enabled: true,
             allowlist: one(&req.repo),
@@ -320,6 +330,7 @@ impl Stages for RealStages {
     }
 
     async fn deploy(&self, branch: &str, req: &LoopRequest) -> Result<bool, LoopError> {
+        validate_agent_branch(branch)?;
         let env = deploy::DeployEnvelope {
             enabled: true,
             allowlist: one(&req.repo),
@@ -403,6 +414,8 @@ mod tests {
             max_iterations: max,
         }
     }
+    const OWNED_BRANCH: &str = "bolt/run/r/issue-8/attempt-1";
+
     fn stages(
         branch: Option<&'static str>,
         published: bool,
@@ -420,7 +433,7 @@ mod tests {
 
     #[tokio::test]
     async fn all_green_completes_in_order() {
-        let s = stages(Some("bolt/fix/issue-8"), true, true, true);
+        let s = stages(Some(OWNED_BRANCH), true, true, true);
         let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0)
             .await
             .unwrap();
@@ -445,8 +458,18 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn branch_policy_refuses_untrusted_branch_before_publish() {
+        let s = stages(Some("main"), true, true, true);
+        let err = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("branch-policy"));
+        assert_eq!(*s.reached.borrow(), ["dispatch"]);
+    }
+
+    #[tokio::test]
     async fn unpublished_stops_before_merge() {
-        let s = stages(Some("b"), false, true, true);
+        let s = stages(Some(OWNED_BRANCH), false, true, true);
         let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0)
             .await
             .unwrap();
@@ -460,7 +483,7 @@ mod tests {
 
     #[tokio::test]
     async fn unmerged_stops_before_deploy() {
-        let s = stages(Some("b"), true, false, true);
+        let s = stages(Some(OWNED_BRANCH), true, false, true);
         let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0)
             .await
             .unwrap();
@@ -473,7 +496,7 @@ mod tests {
 
     #[tokio::test]
     async fn rolled_back_stops_at_deploy() {
-        let s = stages(Some("b"), true, true, false);
+        let s = stages(Some(OWNED_BRANCH), true, true, false);
         let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 0)
             .await
             .unwrap();
@@ -489,7 +512,7 @@ mod tests {
 
     #[tokio::test]
     async fn kill_switch_refuses_before_any_stage() {
-        let s = stages(Some("b"), true, true, true);
+        let s = stages(Some(OWNED_BRANCH), true, true, true);
         let r = run_loop(&s, &env(false, vec![repo()], 1), &req(), 0)
             .await
             .unwrap();
@@ -499,7 +522,7 @@ mod tests {
 
     #[tokio::test]
     async fn scope_fence_refuses_off_allowlist() {
-        let s = stages(Some("b"), true, true, true);
+        let s = stages(Some(OWNED_BRANCH), true, true, true);
         let r = run_loop(&s, &env(true, vec![], 1), &req(), 0)
             .await
             .unwrap();
@@ -512,7 +535,7 @@ mod tests {
 
     #[tokio::test]
     async fn circuit_breaker_refuses_when_exhausted() {
-        let s = stages(Some("b"), true, true, true);
+        let s = stages(Some(OWNED_BRANCH), true, true, true);
         let r = run_loop(&s, &env(true, vec![repo()], 1), &req(), 1)
             .await
             .unwrap();
@@ -549,7 +572,7 @@ mod tests {
         async fn dispatch(&self, _req: &LoopRequest) -> Result<Option<String>, LoopError> {
             let n = self.calls.get();
             self.calls.set(n + 1);
-            Ok((n >= self.dispatch_ok_from).then(|| "b".to_string()))
+            Ok((n >= self.dispatch_ok_from).then(|| OWNED_BRANCH.to_string()))
         }
         async fn publish(&self, _b: &str, _req: &LoopRequest) -> Result<bool, LoopError> {
             Ok(true)
