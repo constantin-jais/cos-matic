@@ -90,7 +90,7 @@ pub enum Command {
 
     /// Autonomously merge a branch — only with attached green evidence (never red).
     Automerge {
-        /// Branch to gate-and-merge (e.g. `bolt/fix/issue-8`).
+        /// Branch to gate-and-merge (e.g. `bolt/run/run-1/issue-8/attempt-1`).
         #[arg(long)]
         branch: String,
 

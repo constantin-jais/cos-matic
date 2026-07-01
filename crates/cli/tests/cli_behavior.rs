@@ -416,6 +416,38 @@ fn run_killed(
     c.output().expect("spawn bolt-cosmatic")
 }
 
+#[test]
+fn loop_dry_run_works_without_github_token() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = Command::new(COSMATIC)
+        .args([
+            "loop",
+            "--dry-run",
+            "--issue",
+            "3",
+            "--title",
+            "x",
+            "--repo",
+            "o/n",
+        ])
+        .env_remove("GITHUB_TOKEN")
+        .env_remove("GH_TOKEN")
+        .current_dir(tmp.path())
+        .output()
+        .expect("spawn bolt-cosmatic loop --dry-run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "stdout:\n{stdout}\nstderr:\n{stderr}");
+    assert!(
+        stdout.contains("bolt/run/issue-3/issue-3/attempt-1"),
+        "dry-run should show the structured branch name; stdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("skipped remote gate check: no GitHub token"),
+        "dry-run without a token should skip remote gate checks, not fail; stdout:\n{stdout}"
+    );
+}
+
 fn assert_refused(out: &std::process::Output, who: &str) {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(

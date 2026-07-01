@@ -11,6 +11,7 @@ use cli::{
     Cli, Command, HandoffAction, IncidentCommand, InspectAction, LibraryAction, MaturityAction,
 };
 use orchestrator::automerge::Gate;
+use orchestrator::branch_policy::AttemptBranch;
 use orchestrator::forge::{self, GithubForge, RepoId};
 use orchestrator::{automerge, deploy, dispatch, incident, pipeline};
 
@@ -496,7 +497,10 @@ fn main() -> miette::Result<()> {
         } => {
             let repo_id = resolve_repo(repo.as_deref())?;
             if dry_run {
-                let branch = format!("bolt/fix/issue-{issue}");
+                let branch = AttemptBranch::new(&format!("issue-{issue}"), issue, 1)
+                    .map_err(|e| miette!("branch policy: {e}"))?
+                    .as_str()
+                    .to_string();
                 println!(
                     "[dry-run] loop for issue #{issue} on {}/{} — no fix, merge, or deploy will run.",
                     repo_id.owner, repo_id.name
@@ -505,24 +509,41 @@ fn main() -> miette::Result<()> {
                     "  1. dispatch  -> would create `{branch}` and run a bounded fixer. [skipped]"
                 );
                 println!("  2. publish   -> would push `{branch}` and open a PR. [skipped]");
-                let rt = tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()
-                    .into_diagnostic()?;
-                // Build the forge inside the runtime — octocrab's HTTP client
-                // needs a reactor at construction.
-                let verdict = rt
-                    .block_on(async {
-                        let forge =
-                            GithubForge::from_env().map_err(|e| automerge::MergeError(e.0))?;
-                        automerge::ForgeGate::new(&forge)
-                            .verdict(&automerge::MergeRequest {
-                                branch: branch.clone(),
-                                repo: repo_id.clone(),
-                            })
-                            .await
-                    })
-                    .into_diagnostic()?;
+
+                let maybe_verdict = if std::env::var_os("GITHUB_TOKEN").is_some()
+                    || std::env::var_os("GH_TOKEN").is_some()
+                {
+                    let rt = tokio::runtime::Builder::new_multi_thread()
+                        .enable_all()
+                        .build()
+                        .into_diagnostic()?;
+                    Some(
+                        rt.block_on(async {
+                            let forge =
+                                GithubForge::from_env().map_err(|e| automerge::MergeError(e.0))?;
+                            automerge::ForgeGate::new(&forge)
+                                .verdict(&automerge::MergeRequest {
+                                    branch: branch.clone(),
+                                    repo: repo_id.clone(),
+                                })
+                                .await
+                        })
+                        .into_diagnostic()?,
+                    )
+                } else {
+                    None
+                };
+
+                let Some(verdict) = maybe_verdict else {
+                    println!(
+                        "  3. automerge -> skipped remote gate check: no GitHub token in dry-run. [skipped]"
+                    );
+                    println!(
+                        "  4. deploy    -> would canary-deploy, smoke-test, and promote-or-rollback. [skipped]"
+                    );
+                    return Ok(());
+                };
+
                 let green = matches!(verdict, automerge::Verdict::Green);
                 println!(
                     "  3. automerge -> real gate verdict for `{branch}`: {verdict:?} -> would {}.",
