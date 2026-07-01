@@ -9,6 +9,7 @@
 //! in the compiler (ADR: goals-safe-declarative-checks).
 
 pub mod automerge;
+pub mod branch_gc;
 pub mod branch_policy;
 pub mod deploy;
 pub mod dispatch;

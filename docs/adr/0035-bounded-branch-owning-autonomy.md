@@ -91,8 +91,12 @@ future live operation should touch GitHub. The real dispatch path now emits
 structured attempt branches and the loop validates the branch before publish,
 automerge, or deploy.
 
-This ADR does not yet implement multi-attempt scoring, PR selection, or garbage
-collection. Those are follow-up capabilities built on the branch ownership
+`crates/orchestrator/src/branch_gc.rs` defines the first offline garbage
+collection planner. It only plans deletion for branches with matching ownership
+metadata, expired TTL, delete-policy approval, and available deletion budget.
+
+This ADR does not yet implement multi-attempt scoring, PR selection, or live
+branch deletion. Those are follow-up capabilities built on the branch ownership
 contract.
 
 ## Consequences
