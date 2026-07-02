@@ -9,6 +9,7 @@ use miette::{IntoDiagnostic, miette};
 use bolt_cos_matic::generate;
 use cli::{
     Cli, Command, HandoffAction, IncidentCommand, InspectAction, LibraryAction, MaturityAction,
+    StackAction,
 };
 use orchestrator::automerge::Gate;
 use orchestrator::branch_policy::AttemptBranch;
@@ -285,6 +286,70 @@ fn main() -> miette::Result<()> {
                     ))
                 }
             }
+        },
+        Command::Stack { action } => match action {
+            StackAction::ProjectStatus { root, json } => {
+                let report = bolt_cos_matic::stack::project_status(&root)?;
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&report).into_diagnostic()?
+                    );
+                } else {
+                    print_project_status(&report);
+                }
+                Ok(())
+            }
+            StackAction::Detect { root, json } => {
+                let report = bolt_cos_matic::stack::stack_detect(&root)?;
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&report).into_diagnostic()?
+                    );
+                } else {
+                    print_stack_detect(&report);
+                }
+                Ok(())
+            }
+            StackAction::Scorecard { root, json } => {
+                let report = bolt_cos_matic::stack::stack_scorecard(&root)?;
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&report).into_diagnostic()?
+                    );
+                } else {
+                    print_stack_scorecard(&report);
+                }
+                if report.decision == bolt_cos_matic::stack::StackDecision::NoGo {
+                    Err(miette!("stack scorecard is NO_GO"))
+                } else {
+                    Ok(())
+                }
+            }
+            StackAction::DependencyAudit { root, json } => {
+                let report = bolt_cos_matic::stack::dependency_audit(&root)?;
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&report).into_diagnostic()?
+                    );
+                } else {
+                    print_dependency_audit(&report);
+                }
+                if report.has_failures() {
+                    Err(miette!("dependency audit has blocking findings"))
+                } else {
+                    Ok(())
+                }
+            }
+            StackAction::LocalSmoke {
+                root,
+                commands,
+                timeout_seconds,
+                json,
+            } => run_local_smoke(&root, &commands, timeout_seconds, json),
         },
         Command::Incident {
             command:
@@ -701,6 +766,283 @@ fn print_handoff_report(report: &bolt_cos_matic::handoff::HandoffReport) {
             finding.message
         );
     }
+}
+
+fn print_project_status(report: &bolt_cos_matic::stack::ProjectStatusReport) {
+    println!(
+        "project_status: target={} mode={}",
+        report.target, report.mode
+    );
+    if report.git.is_repo {
+        println!(
+            "git: branch={} dirty_entries={}",
+            report
+                .git
+                .branch
+                .as_deref()
+                .unwrap_or("<detached-or-unknown>"),
+            report.git.dirty_entries.len()
+        );
+    } else {
+        println!("git: not a repository");
+    }
+    if !report.detected_scripts.is_empty() {
+        println!("detected scripts:");
+        for script in &report.detected_scripts {
+            println!("  - {script}");
+        }
+    }
+    print_stack_findings(&report.findings);
+    print_next_actions(&report.next_actions);
+}
+
+fn print_stack_detect(report: &bolt_cos_matic::stack::StackDetectReport) {
+    println!(
+        "stack_detect: target={} mode={}",
+        report.target, report.mode
+    );
+    for component in &report.components {
+        println!(
+            "component: {} {} confidence={} evidence={}",
+            component.kind,
+            component.name,
+            component.confidence,
+            component.evidence.join(", ")
+        );
+    }
+    if !report.suggested_commands.is_empty() {
+        println!("suggested local commands:");
+        for command in &report.suggested_commands {
+            println!("  - {command}");
+        }
+    }
+    if !report.missing_gates.is_empty() {
+        println!("missing gates:");
+        for gate in &report.missing_gates {
+            println!("  - {gate}");
+        }
+    }
+    print_stack_findings(&report.findings);
+}
+
+fn print_stack_scorecard(report: &bolt_cos_matic::stack::StackScorecardReport) {
+    println!(
+        "stack_scorecard: target={} decision={} mode={}",
+        report.target, report.decision, report.mode
+    );
+    for axis in &report.axes {
+        println!("axis: {} {}", axis.status.label(), axis.axis);
+        for missing in &axis.missing_evidence {
+            println!("  missing: {missing}");
+        }
+    }
+    print_stack_findings(&report.findings);
+    print_next_actions(&report.next_actions);
+}
+
+fn print_dependency_audit(report: &bolt_cos_matic::stack::DependencyAuditReport) {
+    println!(
+        "dependency_audit: target={} mode={}",
+        report.target, report.mode
+    );
+    if !report.manifests.is_empty() {
+        println!("manifests:");
+        for manifest in &report.manifests {
+            println!("  - {manifest}");
+        }
+    }
+    print_stack_findings(&report.findings);
+    if !report.waiver_candidates.is_empty() {
+        println!("waiver candidates:");
+        for waiver in &report.waiver_candidates {
+            println!("  - {waiver}");
+        }
+    }
+}
+
+fn print_stack_findings(findings: &[bolt_cos_matic::stack::StackFinding]) {
+    for finding in findings {
+        eprintln!(
+            "{} [{}] {}",
+            finding.severity.label(),
+            finding.axis,
+            finding.message
+        );
+    }
+}
+
+fn print_next_actions(actions: &[String]) {
+    if actions.is_empty() {
+        return;
+    }
+    println!("next actions:");
+    for action in actions {
+        println!("  - {action}");
+    }
+}
+
+fn run_local_smoke(
+    root: &std::path::Path,
+    commands: &[String],
+    timeout_seconds: u64,
+    json: bool,
+) -> miette::Result<()> {
+    if commands.is_empty() {
+        return Err(miette!("local-smoke requires at least one --cmd"));
+    }
+    let mut results = Vec::new();
+    let mut failed = false;
+    for command in commands {
+        if let Some(reason) = refused_smoke_command(command) {
+            failed = true;
+            results.push(serde_json::json!({
+                "command": command,
+                "status": "refused",
+                "reason": reason,
+                "exit_code": null,
+            }));
+            continue;
+        }
+        let output = run_smoke_command(root, command, timeout_seconds)?;
+        let code = output.status.code();
+        if !output.status.success() {
+            failed = true;
+        }
+        results.push(serde_json::json!({
+            "command": command,
+            "status": if output.status.success() { "pass" } else { "fail" },
+            "exit_code": code,
+            "stdout": redact_output(&String::from_utf8_lossy(&output.stdout)),
+            "stderr": redact_output(&String::from_utf8_lossy(&output.stderr)),
+        }));
+    }
+    let report = serde_json::json!({
+        "tool": "local_smoke",
+        "version": "0.1",
+        "mode": "local_only",
+        "target": root.to_string_lossy(),
+        "timeout_seconds": timeout_seconds,
+        "timeout_enforced": true,
+        "redactions_applied": true,
+        "results": results,
+    });
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).into_diagnostic()?
+        );
+    } else {
+        println!("local_smoke: target={} mode=local_only", root.display());
+        for result in report["results"].as_array().unwrap_or(&Vec::new()) {
+            println!(
+                "  - {}: {}",
+                result["status"].as_str().unwrap_or("unknown"),
+                result["command"].as_str().unwrap_or("<missing>")
+            );
+            if let Some(reason) = result["reason"].as_str() {
+                println!("    reason: {reason}");
+            }
+        }
+    }
+    if failed {
+        Err(miette!(
+            "local smoke failed or refused at least one command"
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn run_smoke_command(
+    root: &std::path::Path,
+    command: &str,
+    timeout_seconds: u64,
+) -> miette::Result<std::process::Output> {
+    let mut child = if cfg!(windows) {
+        std::process::Command::new("cmd")
+            .args(["/C", command])
+            .current_dir(root)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+    } else {
+        std::process::Command::new("sh")
+            .args(["-c", command])
+            .current_dir(root)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+    }
+    .into_diagnostic()?;
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_seconds);
+    loop {
+        if child.try_wait().into_diagnostic()?.is_some() {
+            return child.wait_with_output().into_diagnostic();
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(miette!(
+                "local smoke command timed out after {timeout_seconds}s: {command}"
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+fn refused_smoke_command(command: &str) -> Option<&'static str> {
+    let lowered = command.to_lowercase();
+    let forbidden = [
+        " clever ",
+        "terraform apply",
+        "pulumi up",
+        "kubectl apply",
+        "docker push",
+        "git push",
+        "npm publish",
+        "cargo publish",
+        "aws ",
+        "gcloud ",
+        "az ",
+        "vercel ",
+        "netlify ",
+        "fly deploy",
+        "deploy",
+    ];
+    if forbidden
+        .iter()
+        .any(|needle| lowered.contains(needle.trim()))
+    {
+        Some("command looks like provisioning, publishing, deploy, or hyperscaler access")
+    } else if lowered.contains("token")
+        || lowered.contains("secret")
+        || lowered.contains("password")
+    {
+        Some("command appears to include secret material")
+    } else {
+        None
+    }
+}
+
+fn redact_output(output: &str) -> String {
+    output
+        .lines()
+        .take(80)
+        .map(|line| {
+            let lowered = line.to_lowercase();
+            if lowered.contains("token")
+                || lowered.contains("secret")
+                || lowered.contains("password")
+                || lowered.contains("authorization")
+            {
+                "<redacted>".to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Print one line per goal outcome, marking hard-gate failures.

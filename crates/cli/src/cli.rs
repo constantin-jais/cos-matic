@@ -63,6 +63,12 @@ pub enum Command {
         action: InspectAction,
     },
 
+    /// Run local-only stack validation helpers (no provisioning, no provider calls).
+    Stack {
+        #[command(subcommand)]
+        action: StackAction,
+    },
+
     /// Incident handling (open an idempotent GitHub issue).
     Incident {
         #[command(subcommand)]
@@ -269,6 +275,72 @@ pub enum InspectAction {
         /// Optional TOML policy. If omitted, the strict Rust-core default is used.
         #[arg(long)]
         policy: Option<PathBuf>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum StackAction {
+    /// Summarize repository state without modifying it.
+    ProjectStatus {
+        /// Repository root to inspect.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Detect stack components and suggested local gates.
+    Detect {
+        /// Repository root to inspect.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Score the detected stack against safety, quality, performance, completeness, and sovereignty.
+    Scorecard {
+        /// Repository root to inspect.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Audit local dependency manifests for license, vulnerability, and sovereignty risk signals.
+    DependencyAudit {
+        /// Repository root to inspect.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Run explicit local smoke commands after safety screening.
+    LocalSmoke {
+        /// Repository root where commands run.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+
+        /// Command to run. Repeat for multiple commands. Refuses dangerous/provisioning commands.
+        #[arg(long = "cmd")]
+        commands: Vec<String>,
+
+        /// Per-command timeout in seconds.
+        #[arg(long, default_value_t = 120)]
+        timeout_seconds: u64,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
     },
 }
 

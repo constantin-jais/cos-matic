@@ -4,9 +4,10 @@ This is a contribution map, not a delivery promise. It keeps the Bolt role clear
 inside the broader stack:
 
 - **Rumble** owns product UX and user journeys.
+- **Portal** owns client-platform primitives, accessibility, tokens, and adapters.
 - **Bolt** owns orchestration, plans, gates, and execution envelopes.
-- **Wrench** owns reusable inspection/extraction tools.
-- **Gear** owns durable substrates, registries, packaging, and runtime primitives.
+- **Wrench** owns reusable inspection, validation, and evidence tools.
+- **Gear** owns durable substrates, canonical extraction runtime, registries, packaging, and runtime primitives.
 
 `bolt-cos-matic` is the Bolt engine. `bolt-harness` is the public proof bench.
 
@@ -26,7 +27,8 @@ See [`docs/versioning.md`](docs/versioning.md) for the version typology.
 - keep live sandbox execution only in `bolt-harness`;
 - document credential rotation and sandbox secret storage;
 - stabilize the README quickstart for a contributor who has never seen the stack;
-- keep CI, contracts, security checks, and coverage green.
+- keep CI, contracts, security checks, and coverage green;
+- document the accepted stack-challenge posture as local-only: scorecards, gates, fixtures, and dry-runs are allowed; paid provisioning and live provider activation are not.
 
 ## Next — `v0.1.x` usable line
 
@@ -35,7 +37,9 @@ See [`docs/versioning.md`](docs/versioning.md) for the version typology.
 - add example plan/refusal/evidence outputs;
 - improve diagnostics and error messages around manifest and handoff failures;
 - add contract tests around orchestration boundaries;
-- add explicit release notes and changelog entries.
+- add explicit release notes and changelog entries;
+- harden and document the implemented P0 stack/tooling helpers: `project_status`, `stack_detect`, `stack_scorecard`, `dependency_audit`, and `local_smoke`;
+- keep `db_security_check`, `adr_generate`, and `deploy_dry_run` as later bounded tools with explicit dry-run/no-provisioning semantics.
 
 ## Later — toward `trusted`
 
@@ -43,7 +47,8 @@ See [`docs/versioning.md`](docs/versioning.md) for the version typology.
 - keyless/OIDC publishing where registries support it;
 - stronger policy isolation for live automation;
 - broader Wrench/Gear integrations only when boundaries remain explicit;
-- hosted or multi-agent operation only after audit, recovery, and privacy controls are proven.
+- hosted or multi-agent operation only after audit, recovery, and privacy controls are proven;
+- broader stack automation only after the P0 helpers are deterministic, testable, and covered by refusal/safe-write evidence.
 
 ## Non-goals for the current line
 
@@ -51,4 +56,5 @@ See [`docs/versioning.md`](docs/versioning.md) for the version typology.
 - model hosting;
 - persistent memory or artifact registry;
 - production deploy automation from the public harness;
+- stack-challenge flows that create paid cloud resources, external providers, buckets, databases, or secrets without a separate explicit approval;
 - compatibility aliases for legacy `aom` names.

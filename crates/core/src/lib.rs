@@ -31,5 +31,6 @@ mod paths;
 pub mod render;
 mod resolve;
 mod safe_write;
+pub mod stack;
 
 pub use error::{Error, Result};
