@@ -54,14 +54,60 @@ fn dependency_audit_exits_nonzero_for_forbidden_provider() {
 fn local_smoke_refuses_deploy_like_commands() {
     let tmp = tempfile::tempdir().unwrap();
 
-    let status = bolt_cosmatic()
+    let output = bolt_cosmatic()
         .args(["stack", "local-smoke", "--root"])
         .arg(tmp.path())
-        .args(["--cmd", "clever deploy"])
-        .status()
+        .args([
+            "--cmd",
+            "clever deploy",
+            "--cmd",
+            "push image",
+            "--cmd",
+            "apply -f manifest.yaml",
+            "--json",
+        ])
+        .output()
         .unwrap();
 
-    assert!(!status.success());
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("refused"));
+    assert!(!stdout.contains("pass"));
+}
+
+#[test]
+fn local_smoke_refuses_shell_metacharacter_evasion() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    let output = bolt_cosmatic()
+        .args(["stack", "local-smoke", "--root"])
+        .arg(tmp.path())
+        .args(["--cmd", "git p$(printf ush)", "--json"])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("refused"));
+    assert!(stdout.contains("shell metacharacters"));
+}
+
+#[test]
+fn local_smoke_redacts_secret_shaped_refusal() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    let output = bolt_cosmatic()
+        .args(["stack", "local-smoke", "--root"])
+        .arg(tmp.path())
+        .args(["--cmd", "API_KEY=abc123 cargo test", "--json"])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("<redacted>"));
+    assert!(!stdout.contains("API_KEY"));
+    assert!(!stdout.contains("abc123"));
 }
 
 #[test]
@@ -143,7 +189,15 @@ fn deploy_dry_run_refuses_push_command() {
     let output = bolt_cosmatic()
         .args(["stack", "deploy_dry_run", "--root"])
         .arg(tmp.path())
-        .args(["--cmd", "git push origin main", "--json"])
+        .args([
+            "--cmd",
+            "git push origin main",
+            "--cmd",
+            "push image",
+            "--cmd",
+            "apply -f manifest.yaml",
+            "--json",
+        ])
         .output()
         .unwrap();
 
@@ -151,4 +205,23 @@ fn deploy_dry_run_refuses_push_command() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("dry_run_only"));
     assert!(stdout.contains("refused"));
+    assert!(!stdout.contains("checked_not_executed"));
+}
+
+#[test]
+fn deploy_dry_run_redacts_secret_shaped_command() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    let output = bolt_cosmatic()
+        .args(["stack", "deploy_dry_run", "--root"])
+        .arg(tmp.path())
+        .args(["--cmd", "API_KEY=abc123 cargo test", "--json"])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("<redacted>"));
+    assert!(!stdout.contains("API_KEY"));
+    assert!(!stdout.contains("abc123"));
 }

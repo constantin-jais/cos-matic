@@ -235,6 +235,8 @@ fn deploy_dry_run_refuses_deploy_push_provision_apply() {
             "cargo test".to_string(),
             "git push origin main".to_string(),
             "terraform apply".to_string(),
+            "push image".to_string(),
+            "apply -f manifest.yaml".to_string(),
         ],
     )
     .unwrap();
@@ -247,6 +249,32 @@ fn deploy_dry_run_refuses_deploy_push_provision_apply() {
             .iter()
             .filter(|command| command.status == "refused")
             .count(),
-        2
+        4
     );
+}
+
+#[test]
+fn deploy_dry_run_refuses_and_redacts_secret_shaped_commands() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    let report = stack::deploy_dry_run(
+        tmp.path(),
+        &[
+            "API_KEY=abc123 cargo test".to_string(),
+            "curl -H 'Authorization: Bearer abc123' https://example.invalid".to_string(),
+            "psql postgres://user:pass@example.invalid/db".to_string(),
+        ],
+    )
+    .unwrap();
+
+    assert!(report.has_failures());
+    assert!(
+        report
+            .commands
+            .iter()
+            .all(|command| command.status == "refused" && command.command == "<redacted>")
+    );
+    let json = serde_json::to_string(&report).unwrap();
+    assert!(!json.contains("abc123"));
+    assert!(!json.contains("user:pass"));
 }

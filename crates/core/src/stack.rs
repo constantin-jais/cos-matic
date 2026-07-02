@@ -950,49 +950,90 @@ fn blank(value: Option<&str>) -> bool {
 
 fn refused_deploy_dry_run_command(command: &str) -> Option<&'static str> {
     let lowered = command.to_lowercase();
-    let forbidden = [
+    if command_contains_secret_material(&lowered) {
+        return Some("command appears to include secret material");
+    }
+
+    let forbidden_words = [
         "deploy",
-        " push",
-        "git push",
+        "push",
         "provision",
-        " apply",
+        "apply",
+        "clever",
+        "aws",
+        "gcloud",
+        "az",
+        "vercel",
+        "netlify",
+        "fly",
+    ];
+    let forbidden_phrases = [
         "terraform apply",
         "pulumi up",
         "kubectl apply",
         "docker push",
         "npm publish",
         "cargo publish",
-        "clever ",
-        "aws ",
-        "gcloud ",
-        "az ",
-        "vercel ",
-        "netlify ",
-        "fly ",
     ];
-    if forbidden.iter().any(|needle| lowered.contains(needle)) {
-        Some("command contains deploy/push/provision/apply or provider access")
-    } else if lowered.contains("token")
-        || lowered.contains("secret")
-        || lowered.contains("password")
+    if forbidden_words
+        .iter()
+        .any(|word| contains_shell_word(&lowered, word))
+        || forbidden_phrases
+            .iter()
+            .any(|phrase| lowered.contains(phrase))
     {
-        Some("command appears to include secret material")
+        Some("command contains deploy/push/provision/apply or provider access")
     } else {
         None
     }
 }
 
 fn redact_command(command: &str) -> String {
-    let lowered = command.to_lowercase();
-    if lowered.contains("token")
-        || lowered.contains("secret")
-        || lowered.contains("password")
-        || lowered.contains("authorization")
-    {
+    if command_contains_secret_material(&command.to_lowercase()) {
         "<redacted>".to_string()
     } else {
         command.to_string()
     }
+}
+
+fn command_contains_secret_material(lowered: &str) -> bool {
+    let secret_needles = [
+        "token",
+        "secret",
+        "password",
+        "passwd",
+        "authorization",
+        "api_key",
+        "api-key",
+        "apikey",
+        "access_key",
+        "access-key",
+        "private_key",
+        "client_secret",
+        "bearer ",
+        "ghp_",
+        "ghs_",
+        "github_pat_",
+        "glpat-",
+        "akia",
+        "sk-",
+    ];
+    secret_needles.iter().any(|needle| lowered.contains(needle))
+        || lowered
+            .split_whitespace()
+            .any(|part| part.contains("://") && part.contains('@'))
+}
+
+fn contains_shell_word(command: &str, word: &str) -> bool {
+    command.match_indices(word).any(|(start, _)| {
+        let before = command[..start].chars().next_back();
+        let after = command[start + word.len()..].chars().next();
+        !before.is_some_and(is_command_word_char) && !after.is_some_and(is_command_word_char)
+    })
+}
+
+fn is_command_word_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_' || ch == '-'
 }
 
 fn decide(axes: &[ScoreAxis], detect: &StackDetectReport) -> StackDecision {

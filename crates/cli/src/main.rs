@@ -1031,7 +1031,7 @@ fn run_local_smoke(
         if let Some(reason) = refused_smoke_command(command) {
             failed = true;
             results.push(serde_json::json!({
-                "command": command,
+                "command": redact_command_for_report(command),
                 "status": "refused",
                 "reason": reason,
                 "exit_code": null,
@@ -1044,7 +1044,7 @@ fn run_local_smoke(
             failed = true;
         }
         results.push(serde_json::json!({
-            "command": command,
+            "command": redact_command_for_report(command),
             "status": if output.status.success() { "pass" } else { "fail" },
             "exit_code": code,
             "stdout": redact_output(&String::from_utf8_lossy(&output.stdout)),
@@ -1128,8 +1128,20 @@ fn run_smoke_command(
 
 fn refused_smoke_command(command: &str) -> Option<&'static str> {
     let lowered = command.to_lowercase();
-    let forbidden = [
-        " clever ",
+    let forbidden_words = [
+        "deploy",
+        "push",
+        "provision",
+        "apply",
+        "clever",
+        "aws",
+        "gcloud",
+        "az",
+        "vercel",
+        "netlify",
+        "fly",
+    ];
+    let forbidden_phrases = [
         "terraform apply",
         "pulumi up",
         "kubectl apply",
@@ -1137,27 +1149,101 @@ fn refused_smoke_command(command: &str) -> Option<&'static str> {
         "git push",
         "npm publish",
         "cargo publish",
-        "aws ",
-        "gcloud ",
-        "az ",
-        "vercel ",
-        "netlify ",
-        "fly deploy",
-        "deploy",
     ];
-    if forbidden
+    if command_contains_secret_material(&lowered) {
+        Some("command appears to include secret material")
+    } else if contains_shell_metacharacter(command) {
+        Some(
+            "command contains shell metacharacters; use a simple local command without expansion or chaining",
+        )
+    } else if forbidden_words
         .iter()
-        .any(|needle| lowered.contains(needle.trim()))
+        .any(|word| contains_shell_word(&lowered, word))
+        || forbidden_phrases
+            .iter()
+            .any(|phrase| lowered.contains(phrase))
     {
         Some("command looks like provisioning, publishing, deploy, or hyperscaler access")
-    } else if lowered.contains("token")
-        || lowered.contains("secret")
-        || lowered.contains("password")
-    {
-        Some("command appears to include secret material")
     } else {
         None
     }
+}
+
+fn redact_command_for_report(command: &str) -> String {
+    if command_contains_secret_material(&command.to_lowercase()) {
+        "<redacted>".to_string()
+    } else {
+        command.to_string()
+    }
+}
+
+fn command_contains_secret_material(lowered: &str) -> bool {
+    let secret_needles = [
+        "token",
+        "secret",
+        "password",
+        "passwd",
+        "authorization",
+        "api_key",
+        "api-key",
+        "apikey",
+        "access_key",
+        "access-key",
+        "private_key",
+        "client_secret",
+        "bearer ",
+        "ghp_",
+        "ghs_",
+        "github_pat_",
+        "glpat-",
+        "akia",
+        "sk-",
+    ];
+    secret_needles.iter().any(|needle| lowered.contains(needle))
+        || lowered
+            .split_whitespace()
+            .any(|part| part.contains("://") && part.contains('@'))
+}
+
+fn contains_shell_metacharacter(command: &str) -> bool {
+    command.chars().any(|ch| {
+        matches!(
+            ch,
+            ';' | '&'
+                | '|'
+                | '<'
+                | '>'
+                | '$'
+                | '`'
+                | '('
+                | ')'
+                | '{'
+                | '}'
+                | '['
+                | ']'
+                | '*'
+                | '?'
+                | '~'
+                | '!'
+                | '\\'
+                | '\''
+                | '"'
+                | '\n'
+                | '\r'
+        )
+    })
+}
+
+fn contains_shell_word(command: &str, word: &str) -> bool {
+    command.match_indices(word).any(|(start, _)| {
+        let before = command[..start].chars().next_back();
+        let after = command[start + word.len()..].chars().next();
+        !before.is_some_and(is_command_word_char) && !after.is_some_and(is_command_word_char)
+    })
+}
+
+fn is_command_word_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_' || ch == '-'
 }
 
 fn redact_output(output: &str) -> String {
@@ -1166,11 +1252,7 @@ fn redact_output(output: &str) -> String {
         .take(80)
         .map(|line| {
             let lowered = line.to_lowercase();
-            if lowered.contains("token")
-                || lowered.contains("secret")
-                || lowered.contains("password")
-                || lowered.contains("authorization")
-            {
+            if command_contains_secret_material(&lowered) {
                 "<redacted>".to_string()
             } else {
                 line.to_string()
