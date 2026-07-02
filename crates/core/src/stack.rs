@@ -124,6 +124,93 @@ pub struct StackScorecardReport {
     pub redactions_applied: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DbSecurityCheckOptions {
+    pub database_url_requested: bool,
+    pub allow_db_connection: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DbSecurityCheckReport {
+    pub tool: String,
+    pub version: String,
+    pub mode: String,
+    pub target: String,
+    pub backend: String,
+    pub sql_files: Vec<String>,
+    pub accepted_fixtures: Vec<String>,
+    pub database_url_requested: bool,
+    pub refused_db_connection: bool,
+    pub db_connection_performed: bool,
+    pub findings: Vec<StackFinding>,
+    pub next_actions: Vec<String>,
+    pub redactions_applied: bool,
+}
+
+impl DbSecurityCheckReport {
+    pub fn has_failures(&self) -> bool {
+        self.findings
+            .iter()
+            .any(|finding| finding.severity == StackSeverity::Fail)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdrDraftRequest {
+    pub title: Option<String>,
+    pub accepted_decision_ref: Option<String>,
+    pub context: Option<String>,
+    pub decision: Option<String>,
+    pub consequences: Vec<String>,
+    pub reversibility: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdrDraftReport {
+    pub tool: String,
+    pub version: String,
+    pub mode: String,
+    pub adr_status: String,
+    pub accepted_automatically: bool,
+    pub missing_fields: Vec<String>,
+    pub markdown: String,
+    pub redactions_applied: bool,
+}
+
+impl AdrDraftReport {
+    pub fn is_complete(&self) -> bool {
+        self.missing_fields.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeployDryRunReport {
+    pub tool: String,
+    pub version: String,
+    pub mode: String,
+    pub target: String,
+    pub dry_run_only: bool,
+    pub commands: Vec<DeployDryRunCommand>,
+    pub findings: Vec<StackFinding>,
+    pub next_actions: Vec<String>,
+    pub redactions_applied: bool,
+}
+
+impl DeployDryRunReport {
+    pub fn has_failures(&self) -> bool {
+        self.findings
+            .iter()
+            .any(|finding| finding.severity == StackSeverity::Fail)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeployDryRunCommand {
+    pub command: String,
+    pub status: String,
+    pub reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum StackDecision {
@@ -437,6 +524,475 @@ pub fn stack_scorecard(root: &Path) -> Result<StackScorecardReport> {
         next_actions,
         redactions_applied: true,
     })
+}
+
+pub fn db_security_check(
+    root: &Path,
+    options: &DbSecurityCheckOptions,
+) -> Result<DbSecurityCheckReport> {
+    let files = collect_files(root)?;
+    let sql_files: Vec<String> = files
+        .all
+        .iter()
+        .filter(|path| path.ends_with(".sql"))
+        .cloned()
+        .collect();
+    let mut findings = Vec::new();
+    let mut accepted_fixtures = Vec::new();
+    let mut tenant_evidence = Vec::new();
+    let mut rls_evidence = Vec::new();
+    let mut pgvector_evidence = Vec::new();
+
+    let refused_db_connection = options.database_url_requested && !options.allow_db_connection;
+    if refused_db_connection {
+        findings.push(StackFinding {
+            axis: "security".to_string(),
+            severity: StackSeverity::Fail,
+            message: "database connection refused: db_security_check is static/local-only unless explicitly allowed".to_string(),
+            evidence: vec!["--database-url supplied (value redacted)".to_string()],
+        });
+    } else if options.database_url_requested {
+        findings.push(StackFinding {
+            axis: "security".to_string(),
+            severity: StackSeverity::Warn,
+            message: "database URL acknowledged, but this local-only command did not connect to any database".to_string(),
+            evidence: vec!["db_connection_performed: false".to_string()],
+        });
+    }
+
+    if sql_files.is_empty() {
+        findings.push(StackFinding {
+            axis: "completeness".to_string(),
+            severity: StackSeverity::Warn,
+            message: "no PostgreSQL SQL files found under migrations/schemas/fixtures".to_string(),
+            evidence: Vec::new(),
+        });
+    }
+
+    for sql_file in &sql_files {
+        let text = read_optional(root, sql_file)?.unwrap_or_default();
+        let normalized = normalize_sql(&text);
+        let is_fixture = is_fixture_sql(sql_file);
+        let contains_pii = fixture_has_pii_or_secret(&normalized);
+
+        if is_fixture && contains_pii {
+            findings.push(StackFinding {
+                axis: "security".to_string(),
+                severity: StackSeverity::Fail,
+                message: "fixture SQL appears to contain PII or secret-shaped data".to_string(),
+                evidence: vec![sql_file.clone()],
+            });
+        } else if is_fixture {
+            accepted_fixtures.push(sql_file.clone());
+        }
+
+        if contains_row_security_off(&normalized) {
+            findings.push(StackFinding {
+                axis: "security".to_string(),
+                severity: StackSeverity::Fail,
+                message: "row_security = off is forbidden in local stack validation".to_string(),
+                evidence: vec![sql_file.clone()],
+            });
+        }
+
+        if normalized.contains("disable row level security") {
+            findings.push(StackFinding {
+                axis: "security".to_string(),
+                severity: StackSeverity::Fail,
+                message: "disabling row level security is forbidden".to_string(),
+                evidence: vec![sql_file.clone()],
+            });
+        }
+
+        if contains_dangerous_grant(&normalized) {
+            findings.push(StackFinding {
+                axis: "security".to_string(),
+                severity: StackSeverity::Fail,
+                message: "dangerous grant detected (ALL or PUBLIC)".to_string(),
+                evidence: vec![sql_file.clone()],
+            });
+        }
+
+        if contains_destructive_migration(&normalized) {
+            findings.push(StackFinding {
+                axis: "security".to_string(),
+                severity: StackSeverity::Fail,
+                message: "dangerous/destructive migration operation detected".to_string(),
+                evidence: vec![sql_file.clone()],
+            });
+        }
+
+        if contains_tenant_marker(&normalized) {
+            tenant_evidence.push(sql_file.clone());
+        }
+        if contains_rls_policy(&normalized) {
+            rls_evidence.push(sql_file.clone());
+        }
+        if contains_pgvector_marker(&normalized) {
+            pgvector_evidence.push(sql_file.clone());
+        }
+    }
+
+    if !tenant_evidence.is_empty() && rls_evidence.is_empty() {
+        findings.push(StackFinding {
+            axis: "security".to_string(),
+            severity: StackSeverity::Fail,
+            message: "multi-tenant SQL detected without RLS policy evidence".to_string(),
+            evidence: tenant_evidence.iter().take(10).cloned().collect(),
+        });
+    }
+
+    if !pgvector_evidence.is_empty() && (tenant_evidence.is_empty() || rls_evidence.is_empty()) {
+        findings.push(StackFinding {
+            axis: "security".to_string(),
+            severity: StackSeverity::Fail,
+            message: "pgvector usage lacks tenant isolation evidence (tenant marker + RLS policy required)".to_string(),
+            evidence: pgvector_evidence.iter().take(10).cloned().collect(),
+        });
+    }
+
+    if findings.is_empty() {
+        findings.push(StackFinding {
+            axis: "security".to_string(),
+            severity: StackSeverity::Pass,
+            message:
+                "SQL fixtures and migrations passed static local-only database security checks"
+                    .to_string(),
+            evidence: sql_files.clone(),
+        });
+    }
+
+    let next_actions = if findings
+        .iter()
+        .any(|finding| finding.severity == StackSeverity::Fail)
+    {
+        vec![
+            "fix blocking SQL security findings before any DB-backed implementation".to_string(),
+            "rerun db_security_check on fixture-only SQL evidence".to_string(),
+        ]
+    } else {
+        vec!["record db_security_check JSON as local database security evidence".to_string()]
+    };
+
+    Ok(DbSecurityCheckReport {
+        tool: "db_security_check".to_string(),
+        version: VERSION.to_string(),
+        mode: MODE.to_string(),
+        target: display_path(root),
+        backend: "static_sql_scan+wrench-db-inspect-compatible".to_string(),
+        sql_files,
+        accepted_fixtures: dedup(accepted_fixtures),
+        database_url_requested: options.database_url_requested,
+        refused_db_connection,
+        db_connection_performed: false,
+        findings,
+        next_actions,
+        redactions_applied: true,
+    })
+}
+
+pub fn adr_generate(request: &AdrDraftRequest) -> AdrDraftReport {
+    let mut missing_fields = Vec::new();
+    if blank(request.title.as_deref()) {
+        missing_fields.push("title".to_string());
+    }
+    if blank(request.accepted_decision_ref.as_deref()) {
+        missing_fields.push("accepted_decision_ref".to_string());
+    }
+    if blank(request.context.as_deref()) {
+        missing_fields.push("context".to_string());
+    }
+    if blank(request.decision.as_deref()) {
+        missing_fields.push("decision".to_string());
+    }
+    if request
+        .consequences
+        .iter()
+        .all(|consequence| consequence.trim().is_empty())
+    {
+        missing_fields.push("consequences".to_string());
+    }
+    if blank(request.reversibility.as_deref()) {
+        missing_fields.push("reversibility".to_string());
+    }
+
+    let title = request
+        .title
+        .as_deref()
+        .unwrap_or("Untitled decision")
+        .trim();
+    let accepted_decision_ref = request
+        .accepted_decision_ref
+        .as_deref()
+        .unwrap_or("missing accepted decision reference")
+        .trim();
+    let context = request.context.as_deref().unwrap_or("TODO: context").trim();
+    let decision = request
+        .decision
+        .as_deref()
+        .unwrap_or("TODO: decision")
+        .trim();
+    let reversibility = request
+        .reversibility
+        .as_deref()
+        .unwrap_or("TODO: reversibility")
+        .trim();
+    let consequences: Vec<String> = request
+        .consequences
+        .iter()
+        .map(|item| item.trim())
+        .filter(|item| !item.is_empty())
+        .map(ToString::to_string)
+        .collect();
+    let consequences = if consequences.is_empty() {
+        vec!["TODO: consequences".to_string()]
+    } else {
+        consequences
+    };
+
+    let mut markdown = String::new();
+    markdown.push_str(&format!("# ADR Draft: {title}\n\n"));
+    markdown.push_str("- Status: Draft — requires human review, not automatically accepted\n");
+    markdown.push_str("- Accepted decision source: ");
+    markdown.push_str(accepted_decision_ref);
+    markdown.push_str("\n\n");
+    markdown.push_str("## Context\n\n");
+    markdown.push_str(context);
+    markdown.push_str("\n\n## Decision\n\n");
+    markdown.push_str(decision);
+    markdown.push_str("\n\n## Consequences\n\n");
+    for consequence in &consequences {
+        markdown.push_str("- ");
+        markdown.push_str(consequence);
+        markdown.push('\n');
+    }
+    markdown.push_str("\n## Reversibility\n\n");
+    markdown.push_str(reversibility);
+    markdown.push_str("\n\n## Acceptance\n\nThis ADR is not accepted automatically. A human maintainer must review, edit, and explicitly accept it.\n");
+
+    AdrDraftReport {
+        tool: "adr_generate".to_string(),
+        version: VERSION.to_string(),
+        mode: MODE.to_string(),
+        adr_status: "draft".to_string(),
+        accepted_automatically: false,
+        missing_fields,
+        markdown,
+        redactions_applied: true,
+    }
+}
+
+pub fn deploy_dry_run(root: &Path, commands: &[String]) -> Result<DeployDryRunReport> {
+    let mut findings = Vec::new();
+    let mut command_reports = Vec::new();
+
+    if !root.exists() {
+        findings.push(StackFinding {
+            axis: "completeness".to_string(),
+            severity: StackSeverity::Fail,
+            message: "deployment root does not exist".to_string(),
+            evidence: vec![display_path(root)],
+        });
+    }
+
+    for command in commands {
+        if let Some(reason) = refused_deploy_dry_run_command(command) {
+            findings.push(StackFinding {
+                axis: "security".to_string(),
+                severity: StackSeverity::Fail,
+                message: "deploy dry-run refused a provisioning/publish command".to_string(),
+                evidence: vec![redact_command(command)],
+            });
+            command_reports.push(DeployDryRunCommand {
+                command: redact_command(command),
+                status: "refused".to_string(),
+                reason: Some(reason.to_string()),
+            });
+        } else {
+            command_reports.push(DeployDryRunCommand {
+                command: redact_command(command),
+                status: "checked_not_executed".to_string(),
+                reason: None,
+            });
+        }
+    }
+
+    if findings.is_empty() {
+        findings.push(StackFinding {
+            axis: "security".to_string(),
+            severity: StackSeverity::Pass,
+            message: "dry-run inspected deployment prerequisites without executing commands"
+                .to_string(),
+            evidence: vec!["dry_run_only: true".to_string()],
+        });
+    }
+
+    let next_actions = if findings
+        .iter()
+        .any(|finding| finding.severity == StackSeverity::Fail)
+    {
+        vec![
+            "replace deploy/push/provision/apply commands with read-only prerequisite checks"
+                .to_string(),
+        ]
+    } else {
+        vec![
+            "attach deploy_dry_run JSON before requesting any real deployment approval".to_string(),
+        ]
+    };
+
+    Ok(DeployDryRunReport {
+        tool: "deploy_dry_run".to_string(),
+        version: VERSION.to_string(),
+        mode: MODE.to_string(),
+        target: display_path(root),
+        dry_run_only: true,
+        commands: command_reports,
+        findings,
+        next_actions,
+        redactions_applied: true,
+    })
+}
+
+fn normalize_sql(text: &str) -> String {
+    let without_line_comments = text
+        .lines()
+        .map(|line| line.split_once("--").map_or(line, |(before, _)| before))
+        .collect::<Vec<_>>()
+        .join(" ");
+    without_line_comments
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn is_fixture_sql(path: &str) -> bool {
+    path.to_lowercase().contains("fixture")
+}
+
+fn fixture_has_pii_or_secret(normalized: &str) -> bool {
+    let secret_needles = [
+        "password",
+        "passwd",
+        "secret",
+        "api_key",
+        "apikey",
+        "access_token",
+        "refresh_token",
+        "bearer ",
+        "phone",
+        "ssn",
+    ];
+    secret_needles
+        .iter()
+        .any(|needle| normalized.contains(needle))
+        || looks_like_email(normalized)
+}
+
+fn looks_like_email(normalized: &str) -> bool {
+    normalized
+        .split([' ', ',', ';', '(', ')', '\'', '"'])
+        .any(|part| {
+            let Some((local, domain)) = part.split_once('@') else {
+                return false;
+            };
+            !local.is_empty() && domain.contains('.') && domain.len() > 3
+        })
+}
+
+fn contains_row_security_off(normalized: &str) -> bool {
+    normalized.contains("row_security = off")
+        || normalized.contains("row_security=off")
+        || normalized.contains("set row_security off")
+}
+
+fn contains_dangerous_grant(normalized: &str) -> bool {
+    normalized.contains("grant all")
+        || (normalized.contains("grant ") && normalized.contains(" to public"))
+        || normalized.contains("alter default privileges") && normalized.contains(" public")
+}
+
+fn contains_destructive_migration(normalized: &str) -> bool {
+    normalized.contains("drop table")
+        || normalized.contains("drop schema")
+        || normalized.contains("truncate table")
+        || (normalized.contains("delete from") && !normalized.contains(" where "))
+}
+
+fn contains_tenant_marker(normalized: &str) -> bool {
+    [
+        "tenant_id",
+        "workspace_id",
+        "organization_id",
+        "organisation_id",
+        "account_id",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
+}
+
+fn contains_rls_policy(normalized: &str) -> bool {
+    normalized.contains("enable row level security") || normalized.contains("create policy")
+}
+
+fn contains_pgvector_marker(normalized: &str) -> bool {
+    normalized.contains("pgvector")
+        || normalized.contains(" vector(")
+        || normalized.contains(" ivfflat")
+        || normalized.contains(" hnsw")
+        || normalized.contains("<->")
+}
+
+fn blank(value: Option<&str>) -> bool {
+    value.is_none_or(|value| value.trim().is_empty())
+}
+
+fn refused_deploy_dry_run_command(command: &str) -> Option<&'static str> {
+    let lowered = command.to_lowercase();
+    let forbidden = [
+        "deploy",
+        " push",
+        "git push",
+        "provision",
+        " apply",
+        "terraform apply",
+        "pulumi up",
+        "kubectl apply",
+        "docker push",
+        "npm publish",
+        "cargo publish",
+        "clever ",
+        "aws ",
+        "gcloud ",
+        "az ",
+        "vercel ",
+        "netlify ",
+        "fly ",
+    ];
+    if forbidden.iter().any(|needle| lowered.contains(needle)) {
+        Some("command contains deploy/push/provision/apply or provider access")
+    } else if lowered.contains("token")
+        || lowered.contains("secret")
+        || lowered.contains("password")
+    {
+        Some("command appears to include secret material")
+    } else {
+        None
+    }
+}
+
+fn redact_command(command: &str) -> String {
+    let lowered = command.to_lowercase();
+    if lowered.contains("token")
+        || lowered.contains("secret")
+        || lowered.contains("password")
+        || lowered.contains("authorization")
+    {
+        "<redacted>".to_string()
+    } else {
+        command.to_string()
+    }
 }
 
 fn decide(axes: &[ScoreAxis], detect: &StackDetectReport) -> StackDecision {

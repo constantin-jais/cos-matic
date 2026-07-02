@@ -342,6 +342,74 @@ pub enum StackAction {
         #[arg(long)]
         json: bool,
     },
+
+    /// Static local-only PostgreSQL security checks for migrations/schemas/fixtures.
+    #[command(name = "db_security_check", visible_alias = "db-security-check")]
+    DbSecurityCheck {
+        /// Repository root to inspect.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+
+        /// Optional database URL signal. Value is never printed; connections are refused unless explicitly allowed.
+        #[arg(long)]
+        database_url: Option<String>,
+
+        /// Explicitly acknowledge that a DB connection was requested. This command still performs static checks only.
+        #[arg(long)]
+        allow_db_connection: bool,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Generate a Markdown ADR draft from an accepted decision reference; never accepts the ADR automatically.
+    #[command(name = "adr_generate", visible_alias = "adr-generate")]
+    AdrGenerate {
+        /// ADR title.
+        #[arg(long)]
+        title: Option<String>,
+
+        /// Reference to the already accepted decision that motivates the ADR.
+        #[arg(long)]
+        accepted_decision_ref: Option<String>,
+
+        /// Context section text.
+        #[arg(long)]
+        context: Option<String>,
+
+        /// Decision section text.
+        #[arg(long)]
+        decision: Option<String>,
+
+        /// Consequence bullet. Repeat for multiple consequences.
+        #[arg(long = "consequence")]
+        consequences: Vec<String>,
+
+        /// Reversibility section text.
+        #[arg(long)]
+        reversibility: Option<String>,
+
+        /// Print a machine-readable JSON report instead of Markdown.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Verify deployment prerequisites without executing, pushing, provisioning, or applying changes.
+    #[command(name = "deploy_dry_run", visible_alias = "deploy-dry-run")]
+    DeployDryRun {
+        /// Repository root to inspect.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+
+        /// Command to classify as a deployment prerequisite. Repeat for multiple commands. Never executed.
+        #[arg(long = "cmd")]
+        commands: Vec<String>,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]

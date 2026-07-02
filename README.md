@@ -141,9 +141,12 @@ bolt-cosmatic stack detect --root . --json
 bolt-cosmatic stack scorecard --root .
 bolt-cosmatic stack dependency-audit --root .
 bolt-cosmatic stack local-smoke --root . --cmd "cargo test --workspace --all-targets"
+bolt-cosmatic stack db_security_check --root . --json
+bolt-cosmatic stack adr_generate --title "Decision" --accepted-decision-ref "decision-log#id" --context "..." --decision "..." --consequence "..." --reversibility "..."
+bolt-cosmatic stack deploy_dry_run --root . --cmd "cargo test --workspace --all-targets" --json
 ```
 
-They are designed for scorecards, gates, fixtures, and dry-runs only: no provisioning, no provider activation, no remote secrets.
+They are designed for scorecards, gates, fixtures, ADR drafts, and dry-runs only: no provisioning, no provider activation, no remote secrets, and no automatic ADR acceptance.
 
 This repository dogfoods `harness.toml` to generate `AGENTS.md`, `CLAUDE.md`,
 and Cursor rules from one source of truth. See

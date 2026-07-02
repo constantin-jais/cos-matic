@@ -350,6 +350,91 @@ fn main() -> miette::Result<()> {
                 timeout_seconds,
                 json,
             } => run_local_smoke(&root, &commands, timeout_seconds, json),
+            StackAction::DbSecurityCheck {
+                root,
+                database_url,
+                allow_db_connection,
+                json,
+            } => {
+                let report = bolt_cos_matic::stack::db_security_check(
+                    &root,
+                    &bolt_cos_matic::stack::DbSecurityCheckOptions {
+                        database_url_requested: database_url.is_some(),
+                        allow_db_connection,
+                    },
+                )?;
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&report).into_diagnostic()?
+                    );
+                } else {
+                    print_db_security_check(&report);
+                }
+                if report.has_failures() {
+                    Err(miette!("db security check has blocking findings"))
+                } else {
+                    Ok(())
+                }
+            }
+            StackAction::AdrGenerate {
+                title,
+                accepted_decision_ref,
+                context,
+                decision,
+                consequences,
+                reversibility,
+                json,
+            } => {
+                let report =
+                    bolt_cos_matic::stack::adr_generate(&bolt_cos_matic::stack::AdrDraftRequest {
+                        title,
+                        accepted_decision_ref,
+                        context,
+                        decision,
+                        consequences,
+                        reversibility,
+                    });
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&report).into_diagnostic()?
+                    );
+                } else {
+                    print!("{}", report.markdown);
+                    if !report.missing_fields.is_empty() {
+                        eprintln!("missing fields: {}", report.missing_fields.join(", "));
+                    }
+                }
+                if report.is_complete() {
+                    Ok(())
+                } else {
+                    Err(miette!(
+                        "ADR draft has missing fields: {}",
+                        report.missing_fields.join(", ")
+                    ))
+                }
+            }
+            StackAction::DeployDryRun {
+                root,
+                commands,
+                json,
+            } => {
+                let report = bolt_cos_matic::stack::deploy_dry_run(&root, &commands)?;
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&report).into_diagnostic()?
+                    );
+                } else {
+                    print_deploy_dry_run(&report);
+                }
+                if report.has_failures() {
+                    Err(miette!("deploy dry-run has blocking findings"))
+                } else {
+                    Ok(())
+                }
+            }
         },
         Command::Incident {
             command:
@@ -858,6 +943,56 @@ fn print_dependency_audit(report: &bolt_cos_matic::stack::DependencyAuditReport)
             println!("  - {waiver}");
         }
     }
+}
+
+fn print_db_security_check(report: &bolt_cos_matic::stack::DbSecurityCheckReport) {
+    println!(
+        "db_security_check: target={} mode={} backend={}",
+        report.target, report.mode, report.backend
+    );
+    if report.database_url_requested {
+        println!(
+            "database connection: {} (performed={})",
+            if report.refused_db_connection {
+                "refused"
+            } else {
+                "not executed"
+            },
+            report.db_connection_performed
+        );
+    }
+    if !report.sql_files.is_empty() {
+        println!("sql files:");
+        for file in &report.sql_files {
+            println!("  - {file}");
+        }
+    }
+    if !report.accepted_fixtures.is_empty() {
+        println!("accepted fixtures:");
+        for file in &report.accepted_fixtures {
+            println!("  - {file}");
+        }
+    }
+    print_stack_findings(&report.findings);
+    print_next_actions(&report.next_actions);
+}
+
+fn print_deploy_dry_run(report: &bolt_cos_matic::stack::DeployDryRunReport) {
+    println!(
+        "deploy_dry_run: target={} mode={} dry_run_only={}",
+        report.target, report.mode, report.dry_run_only
+    );
+    if !report.commands.is_empty() {
+        println!("commands classified (not executed):");
+        for command in &report.commands {
+            println!("  - {}: {}", command.status, command.command);
+            if let Some(reason) = &command.reason {
+                println!("    reason: {reason}");
+            }
+        }
+    }
+    print_stack_findings(&report.findings);
+    print_next_actions(&report.next_actions);
 }
 
 fn print_stack_findings(findings: &[bolt_cos_matic::stack::StackFinding]) {
