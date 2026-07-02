@@ -175,14 +175,19 @@ impl BiscuitAuthorizer for BiscuitTokenAuthorizer {
 }
 
 /// Extract the authorized principal from a verified Biscuit token.
+///
+/// The token is passed as raw bytes here to avoid taking a hard dependency on
+/// the `biscuit-auth` crate before real verification is wired. When rumble-lm
+/// key provisioning lands, this signature becomes `&biscuit_auth::Biscuit` and
+/// the crate is added back (with its advisory then fixed upstream or waived on
+/// a real functional basis, not to hold a dead-code type).
 #[allow(dead_code)]
-fn extract_principal(
-    _token: &biscuit_auth::Biscuit,
-) -> Result<AuthorizedPrincipal, AuthorizationError> {
+fn extract_principal(_token_bytes: &[u8]) -> Result<AuthorizedPrincipal, AuthorizationError> {
     // In a full implementation, we would:
-    // 1. Query the token's facts for user_id, tenant_id, delegated_to.
-    // 2. Extract expiration from the token checks.
-    // 3. Validate depth ≤ 1.
+    // 1. Decode the Biscuit and verify its signature against the public keys.
+    // 2. Query the token's facts for user_id, tenant_id, delegated_to.
+    // 3. Extract expiration from the token checks.
+    // 4. Validate delegation depth ≤ 1.
     //
     // For now, return a stub that documents the expected interface.
     Err(AuthorizationError::Unknown {

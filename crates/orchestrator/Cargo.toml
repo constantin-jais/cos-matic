@@ -15,7 +15,6 @@ thiserror.workspace = true
 octocrab.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
-biscuit-auth = "6.0.0"
 bolt-cos-matic.workspace = true
 
 [dev-dependencies]
