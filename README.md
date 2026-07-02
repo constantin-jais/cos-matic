@@ -78,11 +78,11 @@ See:
 
 ## Forge role
 
-`bolt-cos-matic` is the Bolt coordination layer: it turns Rumble product intent into safe plans, policy-gated actions, and inspectable execution evidence. It composes Wrench capabilities and Gear substrates instead of exposing a user product UI.
+`bolt-cos-matic` is the Bolt coordination layer: it turns Rumble product intent into safe plans, policy-gated actions, and inspectable execution evidence. It composes Portal client-platform work, Wrench capabilities, and Gear substrates instead of exposing a user product UI.
 
 ## Boundary
 
-It must not own product UX, raw extraction, persistent memory, artifact registries, or model hosting. Product needs should remain in Rumble; reusable inspection belongs to Wrench; durable infrastructure belongs to Gear.
+It must not own product UX, client-platform/design-system semantics, canonical extraction runtime, persistent memory, artifact registries, or model hosting. Product needs should remain in Rumble; client primitives belong to Portal; reusable inspection belongs to Wrench; extraction/runtime substrate and durable infrastructure belong to Gear.
 
 ## Purpose
 
@@ -97,18 +97,20 @@ It transforms:
 - Agentic orchestration and delegation.
 - Config compilation for coding agents and operational harnesses.
 - Safe-write, drift detection, gates, incidents, and execution evidence.
-- Coordination of Wrench tools and Gear substrates.
+- Coordination of Portal client-platform work, Wrench tools, and Gear substrates.
 
 ## Does Not Own
 
 - Product UX: belongs to Rumble.
-- Raw extraction/parsing: belongs to Wrench.
+- Canonical extraction/parsing runtime: belongs to Gear Loader.
+- Inspection/evidence over extraction outputs: belongs to Wrench.
 - Persistent memory, artifact storage, registry, or runtime substrate: belongs to Gear.
 - Generic chat UI or model hosting.
 
 ## Allowed Dependencies
 
-- Calls **Wrench** tools for extraction, inspection, validation, and evidence.
+- Calls **Wrench** tools for inspection, validation, and evidence.
+- Calls **Gear Loader** for canonical extraction when a runtime/source pipeline is needed.
 - Reads/writes context through **Gear** primitives.
 - Serves **Rumble** products that need orchestration.
 
@@ -130,6 +132,21 @@ Then use `bolt-cosmatic` as the session harness:
 bolt-cosmatic generate --check --manifest harness.toml
 bolt-cosmatic goals --manifest harness.toml
 ```
+
+Local-only stack validation helpers are available under `stack`:
+
+```sh
+bolt-cosmatic stack project-status --root .
+bolt-cosmatic stack detect --root . --json
+bolt-cosmatic stack scorecard --root .
+bolt-cosmatic stack dependency-audit --root .
+bolt-cosmatic stack local-smoke --root . --cmd "cargo test --workspace --all-targets"
+bolt-cosmatic stack db_security_check --root . --json
+bolt-cosmatic stack adr_generate --title "Decision" --accepted-decision-ref "decision-log#id" --context "..." --decision "..." --consequence "..." --reversibility "..."
+bolt-cosmatic stack deploy_dry_run --root . --cmd "cargo test --workspace --all-targets" --json
+```
+
+They are designed for scorecards, gates, fixtures, ADR drafts, and dry-runs only: no provisioning, no provider activation, no remote secrets, and no automatic ADR acceptance.
 
 This repository dogfoods `harness.toml` to generate `AGENTS.md`, `CLAUDE.md`,
 and Cursor rules from one source of truth. See

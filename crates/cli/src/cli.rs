@@ -63,6 +63,12 @@ pub enum Command {
         action: InspectAction,
     },
 
+    /// Run local-only stack validation helpers (no provisioning, no provider calls).
+    Stack {
+        #[command(subcommand)]
+        action: StackAction,
+    },
+
     /// Incident handling (open an idempotent GitHub issue).
     Incident {
         #[command(subcommand)]
@@ -269,6 +275,140 @@ pub enum InspectAction {
         /// Optional TOML policy. If omitted, the strict Rust-core default is used.
         #[arg(long)]
         policy: Option<PathBuf>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum StackAction {
+    /// Summarize repository state without modifying it.
+    ProjectStatus {
+        /// Repository root to inspect.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Detect stack components and suggested local gates.
+    Detect {
+        /// Repository root to inspect.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Score the detected stack against safety, quality, performance, completeness, and sovereignty.
+    Scorecard {
+        /// Repository root to inspect.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Audit local dependency manifests for license, vulnerability, and sovereignty risk signals.
+    DependencyAudit {
+        /// Repository root to inspect.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Run explicit local smoke commands after safety screening.
+    LocalSmoke {
+        /// Repository root where commands run.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+
+        /// Command to run. Repeat for multiple commands. Refuses dangerous/provisioning commands.
+        #[arg(long = "cmd")]
+        commands: Vec<String>,
+
+        /// Per-command timeout in seconds.
+        #[arg(long, default_value_t = 120)]
+        timeout_seconds: u64,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Static local-only PostgreSQL security checks for migrations/schemas/fixtures.
+    #[command(name = "db_security_check", visible_alias = "db-security-check")]
+    DbSecurityCheck {
+        /// Repository root to inspect.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+
+        /// Optional database URL signal. Value is never printed; connections are refused unless explicitly allowed.
+        #[arg(long)]
+        database_url: Option<String>,
+
+        /// Explicitly acknowledge that a DB connection was requested. This command still performs static checks only.
+        #[arg(long)]
+        allow_db_connection: bool,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Generate a Markdown ADR draft from an accepted decision reference; never accepts the ADR automatically.
+    #[command(name = "adr_generate", visible_alias = "adr-generate")]
+    AdrGenerate {
+        /// ADR title.
+        #[arg(long)]
+        title: Option<String>,
+
+        /// Reference to the already accepted decision that motivates the ADR.
+        #[arg(long)]
+        accepted_decision_ref: Option<String>,
+
+        /// Context section text.
+        #[arg(long)]
+        context: Option<String>,
+
+        /// Decision section text.
+        #[arg(long)]
+        decision: Option<String>,
+
+        /// Consequence bullet. Repeat for multiple consequences.
+        #[arg(long = "consequence")]
+        consequences: Vec<String>,
+
+        /// Reversibility section text.
+        #[arg(long)]
+        reversibility: Option<String>,
+
+        /// Print a machine-readable JSON report instead of Markdown.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Verify deployment prerequisites without executing, pushing, provisioning, or applying changes.
+    #[command(name = "deploy_dry_run", visible_alias = "deploy-dry-run")]
+    DeployDryRun {
+        /// Repository root to inspect.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+
+        /// Command to classify as a deployment prerequisite. Repeat for multiple commands. Never executed.
+        #[arg(long = "cmd")]
+        commands: Vec<String>,
+
+        /// Print a machine-readable JSON report.
+        #[arg(long)]
+        json: bool,
     },
 }
 
