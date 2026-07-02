@@ -49,6 +49,8 @@ pub struct HandoffReport {
     pub planning_goal: Option<String>,
     pub requested_outputs: Vec<String>,
     pub findings: Vec<HandoffFinding>,
+    #[serde(skip)]
+    pub traceability_links_count: usize,
 }
 
 impl HandoffReport {
@@ -98,39 +100,19 @@ pub fn validate_str(source: &str) -> Result<HandoffReport> {
 }
 
 pub fn dry_run_plan_file(path: &Path) -> Result<DryRunPlan> {
-    let report = validate_file(path)?;
-    let mut gates = vec![
-        gate(
-            "package_approved",
-            "pass",
-            "package metadata and items are present",
-        ),
-        gate(
-            "planning_only_enforced",
-            "pass",
-            "execution is explicitly forbidden",
-        ),
-        gate(
-            "traceability_present",
-            "pass",
-            "traceability links are present",
-        ),
-        gate(
-            "blocking_questions_waived_or_absent",
-            "pass",
-            "no unwaived blocking question detected",
-        ),
-        gate(
-            "high_risks_waived_or_absent",
-            "pass",
-            "no unwaived high/critical risk detected",
-        ),
-        gate(
-            "shared_capability_review_requested",
-            "pass",
-            "shared capability extraction review can be produced",
-        ),
-    ];
+    let source = fs::read_to_string(path).map_err(|source| Error::Io {
+        path: path.display().to_string(),
+        source,
+    })?;
+    let payload: Value = serde_json::from_str(&source).map_err(|err| Error::InvalidHandoff {
+        message: format!("invalid JSON: {err}"),
+    })?;
+    let report = validate_payload(&payload);
+    Ok(dry_run_plan_from_report_and_payload(&report, &payload))
+}
+
+fn dry_run_plan_from_report_and_payload(report: &HandoffReport, payload: &Value) -> DryRunPlan {
+    let mut gates = derive_gates_from_evidence(report, payload);
     let mut tasks = Vec::new();
     let mut next_actions = Vec::new();
 
@@ -143,18 +125,131 @@ pub fn dry_run_plan_file(path: &Path) -> Result<DryRunPlan> {
     } else {
         gates.push(gate(
             "refuse_until_validation_clean",
-            "fail",
+            "blocked",
             "handoff has blocking validation errors",
         ));
         next_actions.push("fix validation findings and resubmit handoff".to_string());
     }
 
-    Ok(DryRunPlan {
-        report,
+    DryRunPlan {
+        report: report.clone(),
         gates,
         tasks,
         next_actions,
-    })
+    }
+}
+
+fn derive_gates_from_evidence(report: &HandoffReport, payload: &Value) -> Vec<PlanGate> {
+    let mut gates = Vec::new();
+
+    // package_approved: check if package data is present and valid
+    let package_id = string_at(payload, &["package", "package_id"]);
+    let items = array_at(payload, &["package", "items"]);
+    let package_approved_status = if package_id.is_some() && !items.is_empty() {
+        "pass"
+    } else {
+        "blocked"
+    };
+    gates.push(gate(
+        "package_approved",
+        package_approved_status,
+        "package metadata and items are present",
+    ));
+
+    // planning_only_enforced: verify execution policy
+    let planning_only = bool_at(payload, &["execution_policy", "planning_only"]);
+    let allow_execution = bool_at(payload, &["execution_policy", "allow_execution"]);
+    let requires_approval = bool_at(
+        payload,
+        &["execution_policy", "requires_human_approval_for_execution"],
+    );
+    let planning_enforced = planning_only == Some(true)
+        && allow_execution == Some(false)
+        && requires_approval == Some(true);
+    gates.push(gate(
+        "planning_only_enforced",
+        if planning_enforced { "pass" } else { "blocked" },
+        "execution is explicitly forbidden",
+    ));
+
+    // traceability_present: derived from count in report
+    let traceability_status = if report.traceability_links_count > 0 {
+        "pass"
+    } else {
+        "blocked"
+    };
+    gates.push(gate(
+        "traceability_present",
+        traceability_status,
+        "traceability links are present",
+    ));
+
+    // blocking_questions_waived_or_absent: check for unwaived blocking questions
+    let has_accepted_waiver = has_accepted_waiver(payload);
+    let has_unwaived_blocker = array_at(payload, &["open_questions"]).iter().any(|q| {
+        string_field(q, "impact").as_deref() == Some("blocking")
+            && string_field(q, "status").as_deref() == Some("open")
+            && !has_accepted_waiver
+    });
+    gates.push(gate(
+        "blocking_questions_waived_or_absent",
+        if !has_unwaived_blocker {
+            "pass"
+        } else {
+            "blocked"
+        },
+        "no unwaived blocking question detected",
+    ));
+
+    // high_risks_waived_or_absent: check for unwaived high/critical risks
+    let has_unwaived_high_risk = array_at(payload, &["risks"]).iter().any(|r| {
+        let severity = string_field(r, "severity");
+        let status = string_field(r, "status");
+        let is_high = matches!(
+            severity.as_deref(),
+            Some("high") | Some("critical") | Some("blocking")
+        );
+        let is_open = !matches!(
+            status.as_deref(),
+            Some("mitigated") | Some("accepted") | Some("waived")
+        );
+        is_high && is_open && !has_accepted_waiver
+    });
+    gates.push(gate(
+        "high_risks_waived_or_absent",
+        if !has_unwaived_high_risk {
+            "pass"
+        } else {
+            "blocked"
+        },
+        "no unwaived high/critical risk detected",
+    ));
+
+    // shared_capability_review_requested: skeleton gate (static, not yet wired)
+    gates.push(gate_skeleton(
+        "shared_capability_review_requested",
+        "pass",
+        "shared capability extraction review can be produced",
+    ));
+
+    // Additional skeleton gates for future integrations.
+    gates.push(gate_skeleton(
+        "human_approval_checkpoint",
+        "pass",
+        "approval workflow not yet integrated",
+    ));
+    gates.push(gate_skeleton(
+        "artifact_supply_chain_verified",
+        "pass",
+        "artifact registry integration pending",
+    ));
+    gates.push(gate_skeleton(
+        "sovereignty_and_license_audit",
+        "pass",
+        "external audit tool integration pending",
+    ));
+
+    gates
 }
 
 fn gate(code: &str, status: &str, detail: &str) -> PlanGate {
@@ -162,6 +257,14 @@ fn gate(code: &str, status: &str, detail: &str) -> PlanGate {
         code: code.to_string(),
         status: status.to_string(),
         detail: detail.to_string(),
+    }
+}
+
+fn gate_skeleton(code: &str, status: &str, detail: &str) -> PlanGate {
+    PlanGate {
+        code: code.to_string(),
+        status: status.to_string(),
+        detail: format!("{} [skeleton (static)]", detail),
     }
 }
 
@@ -304,6 +407,8 @@ fn validate_payload(payload: &Value) -> HandoffReport {
         ));
     }
 
+    let traceability_links_count = array_at(payload, &["traceability_links"]).len();
+
     HandoffReport {
         format,
         kind,
@@ -313,6 +418,7 @@ fn validate_payload(payload: &Value) -> HandoffReport {
         planning_goal,
         requested_outputs,
         findings,
+        traceability_links_count,
     }
 }
 
@@ -705,6 +811,65 @@ mod tests {
                 .findings
                 .iter()
                 .any(|f| f.code == "handoff_hash_conflict")
+        );
+    }
+
+    fn plan_from_payload(payload_str: &str) -> DryRunPlan {
+        let payload: Value = serde_json::from_str(payload_str).unwrap();
+        let report = validate_payload(&payload);
+        dry_run_plan_from_report_and_payload(&report, &payload)
+    }
+
+    #[test]
+    fn gates_traceability_present_passes_when_links_exist() {
+        let payload = valid_payload();
+        let plan = plan_from_payload(&payload);
+        let gate = plan
+            .gates
+            .iter()
+            .find(|g| g.code == "traceability_present")
+            .expect("traceability_present gate should exist");
+        assert_eq!(
+            gate.status, "pass",
+            "traceability gate should pass when links are present"
+        );
+    }
+
+    #[test]
+    fn gates_traceability_present_fails_when_links_empty() {
+        let payload = valid_payload().replace(
+            "\"traceability_links\":[{\"source_type\":\"journey\",\"source_id\":\"j\",\"target_type\":\"action\",\"target_id\":\"a\",\"relation_type\":\"implements\"}]",
+            "\"traceability_links\":[]",
+        );
+        let plan = plan_from_payload(&payload);
+        let gate = plan
+            .gates
+            .iter()
+            .find(|g| g.code == "traceability_present")
+            .expect("traceability_present gate should exist");
+        assert_eq!(
+            gate.status, "blocked",
+            "traceability gate should fail when links are empty"
+        );
+    }
+
+    #[test]
+    fn gates_vary_by_handoff_content() {
+        // Fixture 1: valid payload with traceability
+        let payload1 = valid_payload();
+        let plan1 = plan_from_payload(&payload1);
+
+        // Fixture 2: same but missing traceability
+        let payload2 = valid_payload().replace(
+            "\"traceability_links\":[{\"source_type\":\"journey\",\"source_id\":\"j\",\"target_type\":\"action\",\"target_id\":\"a\",\"relation_type\":\"implements\"}]",
+            "\"traceability_links\":[]",
+        );
+        let plan2 = plan_from_payload(&payload2);
+
+        // The two plans must have different gate sets
+        assert_ne!(
+            plan1.gates, plan2.gates,
+            "gates must vary when handoff content differs"
         );
     }
 }

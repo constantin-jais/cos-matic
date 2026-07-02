@@ -8,6 +8,7 @@
 //! first stop. Each step stays inside the binding envelope; goals & gates live
 //! in the compiler (ADR: goals-safe-declarative-checks).
 
+pub mod authorization;
 pub mod automerge;
 pub mod branch_gc;
 pub mod branch_policy;
