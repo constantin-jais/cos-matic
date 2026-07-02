@@ -196,11 +196,14 @@ name = "bolt-cos-matic"
 version = "0.1.0-alpha.4"
 dependencies = [
  "blake3",
+ "ed25519-dalek",
  "miette",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror",
+ "time",
  "toml",
 ]
 
@@ -210,6 +213,7 @@ version = "0.1.0-alpha.4"
 dependencies = [
  "bolt-cos-matic",
  "clap",
+ "ed25519-dalek",
  "inquire",
  "miette",
  "orchestrator",

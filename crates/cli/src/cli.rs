@@ -225,6 +225,22 @@ pub enum HandoffAction {
         #[arg(long)]
         dry_run: bool,
 
+        /// Optional Wrench EvidenceReport v0.1 files projected as evidence refs.
+        #[arg(long = "evidence-report")]
+        evidence_reports: Vec<PathBuf>,
+
+        /// Optional Gear ArtifactManifest files for Wrench evidence reports.
+        #[arg(long = "evidence-manifest")]
+        evidence_manifests: Vec<PathBuf>,
+
+        /// Optional signed human approval v0.1 files projected as evidence refs.
+        #[arg(long = "human-approval")]
+        human_approvals: Vec<PathBuf>,
+
+        /// Optional approval key registry used to resolve human approval public_key_ref values.
+        #[arg(long = "approval-key-registry")]
+        approval_key_registry: Option<PathBuf>,
+
         /// Print a machine-readable JSON report.
         #[arg(long)]
         json: bool,

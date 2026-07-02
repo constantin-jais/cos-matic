@@ -10,6 +10,8 @@
 use std::fs;
 use std::process::Command;
 
+use ed25519_dalek::{Signer, SigningKey};
+
 /// Path to the compiled `bolt-cosmatic` binary, injected by Cargo for integration tests of
 /// the crate that defines the bin.
 const COSMATIC: &str = env!("CARGO_BIN_EXE_bolt-cosmatic");
@@ -400,6 +402,884 @@ fn handoff_plan_requires_dry_run() {
         .output()
         .expect("spawn bolt-cosmatic handoff plan");
     assert!(!out.status.success(), "plan without --dry-run must fail");
+}
+
+#[test]
+fn handoff_plan_projects_passed_wrench_evidence_report() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    let evidence = tmp.path().join("wrench-evidence.json");
+    fs::write(
+        &payload,
+        handoff_payload_with(r#""requested_outputs":["implementation_plan"]"#),
+    )
+    .unwrap();
+    fs::write(&evidence, wrench_evidence_report("passed")).unwrap();
+
+    let out = Command::new(COSMATIC)
+        .args([
+            "handoff",
+            "plan",
+            payload.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+            "--evidence-report",
+            evidence.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn bolt-cosmatic handoff plan --evidence-report");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "stdout:\n{stdout}\nstderr:\n{stderr}");
+    assert!(stdout.contains("wrench_report_passed"), "stdout:\n{stdout}");
+    assert!(
+        stdout.contains("Wrench evidence refs are present"),
+        "stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn handoff_plan_projects_gear_wrench_evidence_manifest() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    let manifest = tmp.path().join("gear-wrench-manifest.json");
+    fs::write(
+        &payload,
+        handoff_payload_with(r#""requested_outputs":["implementation_plan"]"#),
+    )
+    .unwrap();
+    fs::write(
+        &manifest,
+        gear_wrench_evidence_manifest(
+            "passed",
+            "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+            "active",
+        ),
+    )
+    .unwrap();
+
+    let out = Command::new(COSMATIC)
+        .args([
+            "handoff",
+            "plan",
+            payload.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+            "--evidence-manifest",
+            manifest.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn bolt-cosmatic handoff plan --evidence-manifest");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "stdout:\n{stdout}\nstderr:\n{stderr}");
+
+    let plan: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let gates = plan["gates"].as_array().expect("gates array");
+    let wrench_gate = gates
+        .iter()
+        .find(|gate| gate["code"] == "wrench_report_passed")
+        .expect("wrench_report_passed gate");
+    let artifact_gate = gates
+        .iter()
+        .find(|gate| gate["code"] == "artifact_supply_chain_verified")
+        .expect("artifact_supply_chain_verified gate");
+    assert_eq!(wrench_gate["status"], "pass");
+    assert_eq!(artifact_gate["status"], "pass");
+    assert!(
+        artifact_gate["detail"]
+            .as_str()
+            .unwrap()
+            .contains("Gear artifact refs are present"),
+        "artifact gate: {artifact_gate}"
+    );
+}
+
+#[test]
+fn handoff_plan_refuses_invalid_gear_wrench_evidence_manifest_hash() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    let manifest = tmp.path().join("gear-wrench-manifest.json");
+    fs::write(
+        &payload,
+        handoff_payload_with(r#""requested_outputs":["implementation_plan"]"#),
+    )
+    .unwrap();
+    fs::write(
+        &manifest,
+        gear_wrench_evidence_manifest("passed", "sha256:not-a-valid-hash", "active"),
+    )
+    .unwrap();
+
+    let out = Command::new(COSMATIC)
+        .args([
+            "handoff",
+            "plan",
+            payload.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+            "--evidence-manifest",
+            manifest.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn bolt-cosmatic handoff plan --evidence-manifest");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "invalid manifest hash must refuse");
+    assert!(
+        stderr.contains("artifact.hash must be sha256"),
+        "stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn handoff_plan_refuses_revoked_gear_wrench_evidence_manifest() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    let manifest = tmp.path().join("gear-wrench-manifest.json");
+    fs::write(
+        &payload,
+        handoff_payload_with(r#""requested_outputs":["implementation_plan"]"#),
+    )
+    .unwrap();
+    fs::write(
+        &manifest,
+        gear_wrench_evidence_manifest(
+            "passed",
+            "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+            "revoked",
+        ),
+    )
+    .unwrap();
+
+    let out = Command::new(COSMATIC)
+        .args([
+            "handoff",
+            "plan",
+            payload.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+            "--evidence-manifest",
+            manifest.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn bolt-cosmatic handoff plan --evidence-manifest");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!out.status.success(), "revoked manifest must refuse");
+    assert!(stdout.contains("artifact_not_active"), "stdout:\n{stdout}");
+    assert!(
+        stdout.contains("artifact_supply_chain_verified"),
+        "stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn handoff_plan_projects_signed_human_approval() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    let approval = tmp.path().join("human-approval.json");
+    let registry = tmp.path().join("approval-key-registry.json");
+    fs::write(
+        &payload,
+        handoff_payload_with(r#""requested_outputs":["implementation_plan"]"#),
+    )
+    .unwrap();
+    fs::write(
+        &approval,
+        human_approval(
+            "approved",
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "2099-12-31T00:00:00Z",
+        ),
+    )
+    .unwrap();
+    fs::write(&registry, approval_key_registry(&[default_approval_key()])).unwrap();
+
+    let out = Command::new(COSMATIC)
+        .args([
+            "handoff",
+            "plan",
+            payload.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+            "--human-approval",
+            approval.to_str().unwrap(),
+            "--approval-key-registry",
+            registry.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn bolt-cosmatic handoff plan --human-approval");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "stdout:\n{stdout}\nstderr:\n{stderr}");
+
+    let plan: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let approval_gate = plan["gates"]
+        .as_array()
+        .expect("gates array")
+        .iter()
+        .find(|gate| gate["code"] == "human_approval_checkpoint")
+        .expect("human_approval_checkpoint gate");
+    assert_eq!(approval_gate["status"], "pass");
+    assert!(
+        approval_gate["detail"]
+            .as_str()
+            .unwrap()
+            .contains("registry-backed"),
+        "approval gate: {approval_gate}"
+    );
+}
+
+#[test]
+fn handoff_plan_accepts_rotated_human_approval_key() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    let approval = tmp.path().join("human-approval.json");
+    let registry = tmp.path().join("approval-key-registry.json");
+    fs::write(
+        &payload,
+        handoff_payload_with(r#""requested_outputs":["implementation_plan"]"#),
+    )
+    .unwrap();
+    fs::write(
+        &approval,
+        human_approval_with_key(
+            "approved",
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "2099-12-31T00:00:00Z",
+            "human-operator-demo-key-02",
+            43,
+        ),
+    )
+    .unwrap();
+    fs::write(
+        &registry,
+        approval_key_registry(&[
+            ApprovalKeyFixture {
+                public_key_ref: "human-operator-demo-key-01",
+                seed: 42,
+                state: "active",
+                not_before: "2000-01-01T00:00:00Z",
+                expires_at: "2099-12-31T00:00:00Z",
+                rotated_from: None,
+                rotated_to: Some("human-operator-demo-key-02"),
+                revoked_at: None,
+            },
+            ApprovalKeyFixture {
+                public_key_ref: "human-operator-demo-key-02",
+                seed: 43,
+                state: "active",
+                not_before: "2000-07-01T00:00:00Z",
+                expires_at: "2099-12-31T00:00:00Z",
+                rotated_from: Some("human-operator-demo-key-01"),
+                rotated_to: None,
+                revoked_at: None,
+            },
+        ]),
+    )
+    .unwrap();
+
+    let out = Command::new(COSMATIC)
+        .args([
+            "handoff",
+            "plan",
+            payload.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+            "--human-approval",
+            approval.to_str().unwrap(),
+            "--approval-key-registry",
+            registry.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn bolt-cosmatic handoff plan with rotated approval key");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "stdout:\n{stdout}\nstderr:\n{stderr}");
+    assert!(
+        stdout.contains("human_approval_checkpoint"),
+        "stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn handoff_plan_refuses_unknown_human_approval_key() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    let approval = tmp.path().join("human-approval.json");
+    fs::write(
+        &payload,
+        handoff_payload_with(r#""requested_outputs":["implementation_plan"]"#),
+    )
+    .unwrap();
+    fs::write(
+        &approval,
+        human_approval(
+            "approved",
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "2099-12-31T00:00:00Z",
+        ),
+    )
+    .unwrap();
+
+    let out = Command::new(COSMATIC)
+        .args([
+            "handoff",
+            "plan",
+            payload.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+            "--human-approval",
+            approval.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn bolt-cosmatic handoff plan --human-approval");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!out.status.success(), "unknown approval key must refuse");
+    assert!(
+        stdout.contains("human_approval_key_unknown"),
+        "stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn handoff_plan_refuses_revoked_human_approval_key() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    let approval = tmp.path().join("human-approval.json");
+    let registry = tmp.path().join("approval-key-registry.json");
+    fs::write(
+        &payload,
+        handoff_payload_with(r#""requested_outputs":["implementation_plan"]"#),
+    )
+    .unwrap();
+    fs::write(
+        &approval,
+        human_approval(
+            "approved",
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "2099-12-31T00:00:00Z",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        &registry,
+        approval_key_registry(&[ApprovalKeyFixture {
+            state: "revoked",
+            revoked_at: Some("2026-07-02T00:00:00Z"),
+            ..default_approval_key()
+        }]),
+    )
+    .unwrap();
+
+    let out = Command::new(COSMATIC)
+        .args([
+            "handoff",
+            "plan",
+            payload.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+            "--human-approval",
+            approval.to_str().unwrap(),
+            "--approval-key-registry",
+            registry.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn bolt-cosmatic handoff plan --human-approval");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!out.status.success(), "revoked approval key must refuse");
+    assert!(
+        stdout.contains("human_approval_key_not_active"),
+        "stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn handoff_plan_refuses_expired_human_approval_key() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    let approval = tmp.path().join("human-approval.json");
+    let registry = tmp.path().join("approval-key-registry.json");
+    fs::write(
+        &payload,
+        handoff_payload_with(r#""requested_outputs":["implementation_plan"]"#),
+    )
+    .unwrap();
+    fs::write(
+        &approval,
+        human_approval(
+            "approved",
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "2099-12-31T00:00:00Z",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        &registry,
+        approval_key_registry(&[ApprovalKeyFixture {
+            expires_at: "2000-01-01T00:00:00Z",
+            ..default_approval_key()
+        }]),
+    )
+    .unwrap();
+
+    let out = Command::new(COSMATIC)
+        .args([
+            "handoff",
+            "plan",
+            payload.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+            "--human-approval",
+            approval.to_str().unwrap(),
+            "--approval-key-registry",
+            registry.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn bolt-cosmatic handoff plan --human-approval");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!out.status.success(), "expired approval key must refuse");
+    assert!(
+        stdout.contains("human_approval_key_not_active"),
+        "stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn handoff_plan_refuses_rejected_human_approval() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    let approval = tmp.path().join("human-approval.json");
+    let registry = tmp.path().join("approval-key-registry.json");
+    fs::write(
+        &payload,
+        handoff_payload_with(r#""requested_outputs":["implementation_plan"]"#),
+    )
+    .unwrap();
+    fs::write(
+        &approval,
+        human_approval(
+            "rejected",
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "2099-12-31T00:00:00Z",
+        ),
+    )
+    .unwrap();
+    fs::write(&registry, approval_key_registry(&[default_approval_key()])).unwrap();
+
+    let out = Command::new(COSMATIC)
+        .args([
+            "handoff",
+            "plan",
+            payload.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+            "--human-approval",
+            approval.to_str().unwrap(),
+            "--approval-key-registry",
+            registry.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn bolt-cosmatic handoff plan --human-approval");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!out.status.success(), "rejected approval must refuse");
+    assert!(
+        stdout.contains("human_approval_not_approved"),
+        "stdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("human_approval_checkpoint"),
+        "stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn handoff_plan_refuses_expired_human_approval() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    let approval = tmp.path().join("human-approval.json");
+    let registry = tmp.path().join("approval-key-registry.json");
+    fs::write(
+        &payload,
+        handoff_payload_with(r#""requested_outputs":["implementation_plan"]"#),
+    )
+    .unwrap();
+    fs::write(
+        &approval,
+        human_approval(
+            "approved",
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "2000-01-01T00:00:00Z",
+        ),
+    )
+    .unwrap();
+    fs::write(&registry, approval_key_registry(&[default_approval_key()])).unwrap();
+
+    let out = Command::new(COSMATIC)
+        .args([
+            "handoff",
+            "plan",
+            payload.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+            "--human-approval",
+            approval.to_str().unwrap(),
+            "--approval-key-registry",
+            registry.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn bolt-cosmatic handoff plan --human-approval");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!out.status.success(), "expired approval must refuse");
+    assert!(
+        stdout.contains("human_approval_not_active"),
+        "stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn handoff_plan_refuses_human_approval_subject_mismatch() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    let approval = tmp.path().join("human-approval.json");
+    let registry = tmp.path().join("approval-key-registry.json");
+    fs::write(
+        &payload,
+        handoff_payload_with(r#""requested_outputs":["implementation_plan"]"#),
+    )
+    .unwrap();
+    fs::write(
+        &approval,
+        human_approval(
+            "approved",
+            "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "2099-12-31T00:00:00Z",
+        ),
+    )
+    .unwrap();
+    fs::write(&registry, approval_key_registry(&[default_approval_key()])).unwrap();
+
+    let out = Command::new(COSMATIC)
+        .args([
+            "handoff",
+            "plan",
+            payload.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+            "--human-approval",
+            approval.to_str().unwrap(),
+            "--approval-key-registry",
+            registry.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn bolt-cosmatic handoff plan --human-approval");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!out.status.success(), "mismatched approval must refuse");
+    assert!(
+        stdout.contains("human_approval_not_approved"),
+        "stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn handoff_plan_refuses_invalid_human_approval_signature() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    let approval = tmp.path().join("human-approval.json");
+    let registry = tmp.path().join("approval-key-registry.json");
+    fs::write(
+        &payload,
+        handoff_payload_with(r#""requested_outputs":["implementation_plan"]"#),
+    )
+    .unwrap();
+    fs::write(
+        &approval,
+        human_approval(
+            "approved",
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "2099-12-31T00:00:00Z",
+        )
+        .replacen("\"value\":\"ed25519:", "\"value\":\"ed25519:ff", 1),
+    )
+    .unwrap();
+    fs::write(&registry, approval_key_registry(&[default_approval_key()])).unwrap();
+
+    let out = Command::new(COSMATIC)
+        .args([
+            "handoff",
+            "plan",
+            payload.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+            "--human-approval",
+            approval.to_str().unwrap(),
+            "--approval-key-registry",
+            registry.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn bolt-cosmatic handoff plan --human-approval");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!out.status.success(), "invalid signature must refuse");
+    assert!(
+        stdout.contains("human_approval_signature_invalid"),
+        "stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn handoff_plan_refuses_failed_wrench_evidence_report() {
+    let tmp = tempfile::tempdir().unwrap();
+    let payload = tmp.path().join("handoff.json");
+    let evidence = tmp.path().join("wrench-evidence.json");
+    fs::write(
+        &payload,
+        handoff_payload_with(r#""requested_outputs":["implementation_plan"]"#),
+    )
+    .unwrap();
+    fs::write(&evidence, wrench_evidence_report("failed")).unwrap();
+
+    let out = Command::new(COSMATIC)
+        .args([
+            "handoff",
+            "plan",
+            payload.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+            "--evidence-report",
+            evidence.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn bolt-cosmatic handoff plan --evidence-report");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!out.status.success(), "failed evidence must refuse");
+    assert!(
+        stdout.contains("wrench_evidence_not_passing"),
+        "stdout:\n{stdout}"
+    );
+    assert!(stdout.contains("wrench_report_passed"), "stdout:\n{stdout}");
+}
+
+fn human_approval(decision: &str, subject_hash: &str, expires_at: &str) -> String {
+    human_approval_with_key(
+        decision,
+        subject_hash,
+        expires_at,
+        "human-operator-demo-key-01",
+        42,
+    )
+}
+
+fn human_approval_with_key(
+    decision: &str,
+    subject_hash: &str,
+    expires_at: &str,
+    public_key_ref: &str,
+    seed: u8,
+) -> String {
+    let approval_id = "approval_handoff_h_01";
+    let subject_kind = "handoff_package";
+    let subject_ref = "h";
+    let approved_by = "operator-demo";
+    let approved_at = "2026-07-02T00:00:00Z";
+    let signing_key = SigningKey::from_bytes(&[seed; 32]);
+    let signature_fields = HumanApprovalSignatureFields {
+        approval_id,
+        subject_kind,
+        subject_ref,
+        subject_hash,
+        decision,
+        approved_by,
+        approved_at,
+        expires_at,
+    };
+    let message = human_approval_signature_message(&signature_fields);
+    let signature = format!(
+        "ed25519:{}",
+        lower_hex(&signing_key.sign(message.as_bytes()).to_bytes())
+    );
+
+    format!(
+        r#"{{
+          "format":"bolt.human_approval.v0.1",
+          "approval_id":"{approval_id}",
+          "subject":{{
+            "kind":"{subject_kind}",
+            "ref":"{subject_ref}",
+            "hash":"{subject_hash}"
+          }},
+          "decision":"{decision}",
+          "approved_by":"{approved_by}",
+          "approved_at":"{approved_at}",
+          "expires_at":"{expires_at}",
+          "signature":{{
+            "algorithm":"ed25519",
+            "public_key_ref":"{public_key_ref}",
+            "value":"{signature}"
+          }}
+        }}"#
+    )
+}
+
+#[derive(Clone, Copy)]
+struct ApprovalKeyFixture {
+    public_key_ref: &'static str,
+    seed: u8,
+    state: &'static str,
+    not_before: &'static str,
+    expires_at: &'static str,
+    rotated_from: Option<&'static str>,
+    rotated_to: Option<&'static str>,
+    revoked_at: Option<&'static str>,
+}
+
+fn default_approval_key() -> ApprovalKeyFixture {
+    ApprovalKeyFixture {
+        public_key_ref: "human-operator-demo-key-01",
+        seed: 42,
+        state: "active",
+        not_before: "2000-01-01T00:00:00Z",
+        expires_at: "2099-12-31T00:00:00Z",
+        rotated_from: None,
+        rotated_to: None,
+        revoked_at: None,
+    }
+}
+
+fn approval_key_registry(keys: &[ApprovalKeyFixture]) -> String {
+    let key_refs = keys
+        .iter()
+        .map(|key| {
+            let signing_key = SigningKey::from_bytes(&[key.seed; 32]);
+            let public_key = format!(
+                "ed25519:{}",
+                lower_hex(&signing_key.verifying_key().to_bytes())
+            );
+            let rotated_from = optional_json_string("rotated_from", key.rotated_from);
+            let rotated_to = optional_json_string("rotated_to", key.rotated_to);
+            let revoked_at = optional_json_string("revoked_at", key.revoked_at);
+            format!(
+                r#"{{
+                  "public_key_ref":"{}",
+                  "algorithm":"ed25519",
+                  "public_key":"{}",
+                  "state":"{}",
+                  "not_before":"{}",
+                  "expires_at":"{}"{}{}{}
+                }}"#,
+                key.public_key_ref,
+                public_key,
+                key.state,
+                key.not_before,
+                key.expires_at,
+                rotated_from,
+                rotated_to,
+                revoked_at,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+
+    format!(
+        r#"{{
+          "format":"bolt.approval_key_registry.v0.1",
+          "registry_id":"approval-keys-demo",
+          "issued_at":"2026-07-02T00:00:00Z",
+          "keys":[{key_refs}]
+        }}"#
+    )
+}
+
+fn optional_json_string(field: &str, value: Option<&str>) -> String {
+    value
+        .map(|value| format!(r#", "{field}":"{value}""#))
+        .unwrap_or_default()
+}
+
+struct HumanApprovalSignatureFields<'a> {
+    approval_id: &'a str,
+    subject_kind: &'a str,
+    subject_ref: &'a str,
+    subject_hash: &'a str,
+    decision: &'a str,
+    approved_by: &'a str,
+    approved_at: &'a str,
+    expires_at: &'a str,
+}
+
+fn human_approval_signature_message(fields: &HumanApprovalSignatureFields<'_>) -> String {
+    format!(
+        "bolt.human_approval.v0.1\napproval_id:{}\nsubject.kind:{}\nsubject.ref:{}\nsubject.hash:{}\ndecision:{}\napproved_by:{}\napproved_at:{}\nexpires_at:{}",
+        fields.approval_id,
+        fields.subject_kind,
+        fields.subject_ref,
+        fields.subject_hash,
+        fields.decision,
+        fields.approved_by,
+        fields.approved_at,
+        fields.expires_at,
+    )
+}
+
+fn lower_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    encoded
+}
+
+fn gear_wrench_evidence_manifest(status: &str, artifact_hash: &str, state: &str) -> String {
+    format!(
+        r#"{{
+          "manifest_id":"manifest:wrench-portal-usage-1234567890abcdef",
+          "artifact":{{
+            "artifact_id":"artifact:wrench-portal-usage-1234567890abcdef",
+            "artifact_type":"inspection_report",
+            "producer":"wrench-inspect",
+            "version":"0.1.0",
+            "hash":"{artifact_hash}",
+            "manifest_ref":"manifest:wrench-portal-usage-1234567890abcdef",
+            "state":"{state}",
+            "created_at":"2026-07-02T00:00:00Z"
+          }},
+          "package_type":"json_bundle",
+          "checksums":[{{"algorithm":"sha256","value":"{artifact_hash}"}}],
+          "provenance_id":"provenance:wrench-portal-usage-1234567890abcdef",
+          "retention":{{"policy_ref":null,"expires_at":null,"revoked_at":null,"delete_after":null}},
+          "distribution":{{"channels":[],"install_floor":null,"published_at":null}},
+          "metadata":{{"values":{{
+            "source_format":"wrench.evidence_report.v0.1",
+            "evidence_status":"{status}",
+            "source_report_hash":"sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "subject_kind":"portal_ui",
+            "subject_ref":"rumble-lm/crates/ui"
+          }}}}
+        }}"#
+    )
+}
+
+fn wrench_evidence_report(status: &str) -> String {
+    format!(
+        r#"{{
+          "format":"wrench.evidence_report.v0.1",
+          "report_id":"wrench-portal-usage-1234567890abcdef",
+          "generated_at":"2026-07-02T00:00:00Z",
+          "producer":{{"name":"wrench-inspect","version":"0.1.0"}},
+          "subject":{{"kind":"portal_ui","reference":"rumble-lm/crates/ui"}},
+          "status":"{status}",
+          "summary":{{"errors":0,"warnings":0,"infos":0}},
+          "findings":[],
+          "checks":[{{"code":"portal_tokens_present","status":"passed","summary":"tokens present"}}],
+          "evidence_refs":[],
+          "source_report":{{
+            "format":"wrench.portal_usage_report.v0.1",
+            "hash":"sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "body":{{}}
+          }},
+          "next_actions":[]
+        }}"#
+    )
 }
 
 fn run_killed(

@@ -11,10 +11,13 @@ repository = "https://github.com/constantin-jais/bolt-cos-matic"
 [workspace.dependencies]
 blake3 = "1"
 clap = { version = "4", features = ["derive"] }
+ed25519-dalek = "2"
 inquire = "0.9"
 miette = { version = "7", features = ["fancy"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
+time = { version = "0.3", features = ["parsing"] }
 thiserror = "2"
 toml = "1.1"
 tempfile = "3"

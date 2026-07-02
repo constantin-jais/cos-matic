@@ -5,11 +5,15 @@
 //! Bolt execution. MVP scope: validate/refuse/produce a dry-run planning report;
 //! never execute implementation work.
 
+use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::error::{Error, Result};
 
@@ -100,13 +104,67 @@ pub fn validate_str(source: &str) -> Result<HandoffReport> {
 }
 
 pub fn dry_run_plan_file(path: &Path) -> Result<DryRunPlan> {
+    dry_run_plan_file_with_evidence_sources(path, &[], &[], &[])
+}
+
+pub fn dry_run_plan_file_with_evidence_reports(
+    path: &Path,
+    evidence_report_paths: &[PathBuf],
+) -> Result<DryRunPlan> {
+    dry_run_plan_file_with_evidence_sources(path, evidence_report_paths, &[], &[])
+}
+
+pub fn dry_run_plan_file_with_evidence_reports_and_manifests(
+    path: &Path,
+    evidence_report_paths: &[PathBuf],
+    evidence_manifest_paths: &[PathBuf],
+) -> Result<DryRunPlan> {
+    dry_run_plan_file_with_evidence_sources(
+        path,
+        evidence_report_paths,
+        evidence_manifest_paths,
+        &[],
+    )
+}
+
+pub fn dry_run_plan_file_with_evidence_sources(
+    path: &Path,
+    evidence_report_paths: &[PathBuf],
+    evidence_manifest_paths: &[PathBuf],
+    human_approval_paths: &[PathBuf],
+) -> Result<DryRunPlan> {
+    dry_run_plan_file_with_evidence_sources_and_approval_keys(
+        path,
+        evidence_report_paths,
+        evidence_manifest_paths,
+        human_approval_paths,
+        None,
+    )
+}
+
+pub fn dry_run_plan_file_with_evidence_sources_and_approval_keys(
+    path: &Path,
+    evidence_report_paths: &[PathBuf],
+    evidence_manifest_paths: &[PathBuf],
+    human_approval_paths: &[PathBuf],
+    approval_key_registry_path: Option<&Path>,
+) -> Result<DryRunPlan> {
     let source = fs::read_to_string(path).map_err(|source| Error::Io {
         path: path.display().to_string(),
         source,
     })?;
-    let payload: Value = serde_json::from_str(&source).map_err(|err| Error::InvalidHandoff {
-        message: format!("invalid JSON: {err}"),
-    })?;
+    let mut payload: Value =
+        serde_json::from_str(&source).map_err(|err| Error::InvalidHandoff {
+            message: format!("invalid JSON: {err}"),
+        })?;
+    let approval_key_registry = ApprovalKeyRegistry::load_optional(approval_key_registry_path)?;
+    inject_evidence_sources(
+        &mut payload,
+        evidence_report_paths,
+        evidence_manifest_paths,
+        human_approval_paths,
+        &approval_key_registry,
+    )?;
     let report = validate_payload(&payload);
     Ok(dry_run_plan_from_report_and_payload(&report, &payload))
 }
@@ -137,6 +195,795 @@ fn dry_run_plan_from_report_and_payload(report: &HandoffReport, payload: &Value)
         tasks,
         next_actions,
     }
+}
+
+fn inject_evidence_sources(
+    payload: &mut Value,
+    evidence_report_paths: &[PathBuf],
+    evidence_manifest_paths: &[PathBuf],
+    human_approval_paths: &[PathBuf],
+    approval_key_registry: &ApprovalKeyRegistry,
+) -> Result<()> {
+    let mut projected_evidence_refs = Vec::new();
+    let mut projected_artifact_refs = Vec::new();
+
+    for evidence_report_path in evidence_report_paths {
+        let source = fs::read_to_string(evidence_report_path).map_err(|source| Error::Io {
+            path: evidence_report_path.display().to_string(),
+            source,
+        })?;
+        let evidence_report: Value =
+            serde_json::from_str(&source).map_err(|err| Error::InvalidHandoff {
+                message: format!(
+                    "invalid Wrench evidence report `{}`: {err}",
+                    evidence_report_path.display()
+                ),
+            })?;
+        projected_evidence_refs.push(project_wrench_evidence_report(
+            &evidence_report,
+            evidence_report_path,
+        )?);
+    }
+
+    for evidence_manifest_path in evidence_manifest_paths {
+        let source = fs::read_to_string(evidence_manifest_path).map_err(|source| Error::Io {
+            path: evidence_manifest_path.display().to_string(),
+            source,
+        })?;
+        let evidence_manifest: Value =
+            serde_json::from_str(&source).map_err(|err| Error::InvalidHandoff {
+                message: format!(
+                    "invalid Gear evidence manifest `{}`: {err}",
+                    evidence_manifest_path.display()
+                ),
+            })?;
+        let (evidence_ref, artifact_ref) =
+            project_gear_wrench_evidence_manifest(&evidence_manifest, evidence_manifest_path)?;
+        projected_evidence_refs.push(evidence_ref);
+        projected_artifact_refs.push(artifact_ref);
+    }
+
+    for human_approval_path in human_approval_paths {
+        let source = fs::read(human_approval_path).map_err(|source| Error::Io {
+            path: human_approval_path.display().to_string(),
+            source,
+        })?;
+        let human_approval: Value =
+            serde_json::from_slice(&source).map_err(|err| Error::InvalidHandoff {
+                message: format!(
+                    "invalid human approval `{}`: {err}",
+                    human_approval_path.display()
+                ),
+            })?;
+        projected_evidence_refs.push(project_human_approval(
+            &human_approval,
+            &source,
+            human_approval_path,
+            payload,
+            approval_key_registry,
+        )?);
+    }
+
+    append_projected_refs(
+        payload,
+        "evidence_refs",
+        projected_evidence_refs,
+        "--evidence-report/--evidence-manifest/--human-approval",
+    )?;
+    append_projected_refs(
+        payload,
+        "artifact_refs",
+        projected_artifact_refs,
+        "--evidence-manifest",
+    )?;
+
+    Ok(())
+}
+
+fn append_projected_refs(
+    payload: &mut Value,
+    field: &'static str,
+    refs: Vec<Value>,
+    source_flag: &'static str,
+) -> Result<()> {
+    if refs.is_empty() {
+        return Ok(());
+    }
+
+    if let Value::Object(map) = payload {
+        let target = map.entry(field).or_insert_with(|| Value::Array(Vec::new()));
+        match target {
+            Value::Array(values) => values.extend(refs),
+            _ => {
+                return Err(Error::InvalidHandoff {
+                    message: format!("handoff {field} must be an array when {source_flag} is used"),
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn project_wrench_evidence_report(report: &Value, path: &Path) -> Result<Value> {
+    if string_at(report, &["format"]).as_deref() != Some("wrench.evidence_report.v0.1") {
+        return Err(Error::InvalidHandoff {
+            message: format!(
+                "evidence report `{}` must use format wrench.evidence_report.v0.1",
+                path.display()
+            ),
+        });
+    }
+
+    let report_id = required_string(report, &["report_id"], path)?;
+    let status = required_string(report, &["status"], path)?;
+    let hash = required_string(report, &["source_report", "hash"], path)?;
+    if !is_valid_sha256(&hash) {
+        return Err(Error::InvalidHandoff {
+            message: format!(
+                "evidence report `{}` source_report.hash must be sha256:<64 hex chars>",
+                path.display()
+            ),
+        });
+    }
+    let producer = string_at(report, &["producer", "name"])
+        .filter(|producer| !producer.trim().is_empty())
+        .unwrap_or_else(|| "wrench-inspect".to_string());
+    let summary = source_report_summary(report, &report_id, &status);
+
+    Ok(json!({
+        "kind": "wrench.evidence_report.v0.1",
+        "producer": producer,
+        "ref": report_id,
+        "hash": hash,
+        "status": status,
+        "summary": summary,
+        "metadata": {
+            "source": "--evidence-report",
+            "source_format": "wrench.evidence_report.v0.1"
+        }
+    }))
+}
+
+fn project_gear_wrench_evidence_manifest(manifest: &Value, path: &Path) -> Result<(Value, Value)> {
+    let manifest_id = required_manifest_string(manifest, &["manifest_id"], path)?;
+    let artifact_id = required_manifest_string(manifest, &["artifact", "artifact_id"], path)?;
+    let artifact_type = required_manifest_string(manifest, &["artifact", "artifact_type"], path)?;
+    if artifact_type != "inspection_report" {
+        return Err(Error::InvalidHandoff {
+            message: format!(
+                "Gear evidence manifest `{}` artifact.artifact_type must be inspection_report",
+                path.display()
+            ),
+        });
+    }
+
+    let producer = required_manifest_string(manifest, &["artifact", "producer"], path)?;
+    if producer != "wrench-inspect" {
+        return Err(Error::InvalidHandoff {
+            message: format!(
+                "Gear evidence manifest `{}` artifact.producer must be wrench-inspect",
+                path.display()
+            ),
+        });
+    }
+
+    let manifest_ref = required_manifest_string(manifest, &["artifact", "manifest_ref"], path)?;
+    if manifest_ref != manifest_id {
+        return Err(Error::InvalidHandoff {
+            message: format!(
+                "Gear evidence manifest `{}` artifact.manifest_ref must match manifest_id",
+                path.display()
+            ),
+        });
+    }
+
+    let artifact_hash = required_manifest_string(manifest, &["artifact", "hash"], path)?;
+    if !is_valid_sha256(&artifact_hash) {
+        return Err(Error::InvalidHandoff {
+            message: format!(
+                "Gear evidence manifest `{}` artifact.hash must be sha256:<64 hex chars>",
+                path.display()
+            ),
+        });
+    }
+
+    let source_format =
+        required_manifest_string(manifest, &["metadata", "values", "source_format"], path)?;
+    if source_format != "wrench.evidence_report.v0.1" {
+        return Err(Error::InvalidHandoff {
+            message: format!(
+                "Gear evidence manifest `{}` metadata.values.source_format must be wrench.evidence_report.v0.1",
+                path.display()
+            ),
+        });
+    }
+
+    let status =
+        required_manifest_string(manifest, &["metadata", "values", "evidence_status"], path)?;
+    let state =
+        string_at(manifest, &["artifact", "state"]).unwrap_or_else(|| "unknown".to_string());
+    let source_report_hash = string_at(manifest, &["metadata", "values", "source_report_hash"])
+        .unwrap_or_else(|| "unknown".to_string());
+    let subject_ref = string_at(manifest, &["metadata", "values", "subject_ref"])
+        .unwrap_or_else(|| "unknown".to_string());
+    let summary = format!(
+        "Gear ArtifactManifest {manifest_id}: producer={producer}, status={status}, artifact_state={state}"
+    );
+
+    let evidence_ref = json!({
+        "kind": "wrench.evidence_report.v0.1",
+        "producer": producer,
+        "ref": artifact_id,
+        "artifact_reference_id": artifact_id,
+        "hash": artifact_hash,
+        "status": status,
+        "summary": summary,
+        "metadata": {
+            "source": "--evidence-manifest",
+            "source_format": source_format,
+            "manifest_id": manifest_id,
+            "source_report_hash": source_report_hash,
+            "subject_ref": subject_ref
+        }
+    });
+    let artifact_ref = json!({
+        "kind": "artifact_ref",
+        "artifact_reference_id": artifact_id,
+        "artifact_kind": "wrench_report",
+        "artifact_type": artifact_type,
+        "manifest_version": "gear.artifact_manifest.v0.1",
+        "artifact_hash": artifact_hash,
+        "manifest_ref": manifest_id,
+        "producer": producer,
+        "state": state,
+        "metadata": {
+            "source": "--evidence-manifest",
+            "source_format": source_format
+        }
+    });
+
+    Ok((evidence_ref, artifact_ref))
+}
+
+fn project_human_approval(
+    approval: &Value,
+    bytes: &[u8],
+    path: &Path,
+    handoff: &Value,
+    approval_key_registry: &ApprovalKeyRegistry,
+) -> Result<Value> {
+    if string_at(approval, &["format"]).as_deref() != Some("bolt.human_approval.v0.1") {
+        return Err(Error::InvalidHandoff {
+            message: format!(
+                "human approval `{}` must use format bolt.human_approval.v0.1",
+                path.display()
+            ),
+        });
+    }
+
+    let approval_id = required_approval_string(approval, &["approval_id"], path)?;
+    let subject_kind = required_approval_string(approval, &["subject", "kind"], path)?;
+    let subject_ref = required_approval_string(approval, &["subject", "ref"], path)?;
+    let subject_hash = required_approval_string(approval, &["subject", "hash"], path)?;
+    if !is_valid_sha256(&subject_hash) {
+        return Err(Error::InvalidHandoff {
+            message: format!(
+                "human approval `{}` subject.hash must be sha256:<64 hex chars>",
+                path.display()
+            ),
+        });
+    }
+
+    let decision = required_approval_string(approval, &["decision"], path)?;
+    let approved_by = required_approval_string(approval, &["approved_by"], path)?;
+    let approved_at = required_approval_string(approval, &["approved_at"], path)?;
+    let expires_at = required_approval_string(approval, &["expires_at"], path)?;
+    validate_canonical_utc_timestamp(&approved_at, "approved_at", "human approval", path)?;
+    validate_canonical_utc_timestamp(&expires_at, "expires_at", "human approval", path)?;
+    let signature_algorithm =
+        required_approval_string(approval, &["signature", "algorithm"], path)?;
+    let signer_ref = required_approval_string(approval, &["signature", "public_key_ref"], path)?;
+    let signature_value = required_approval_string(approval, &["signature", "value"], path)?;
+    let now = OffsetDateTime::now_utc();
+
+    if signature_algorithm != "ed25519" {
+        return Err(Error::InvalidHandoff {
+            message: format!(
+                "human approval `{}` signature.algorithm must be ed25519",
+                path.display()
+            ),
+        });
+    }
+
+    let expected_ref = string_at(handoff, &["source", "handoff_id"])
+        .unwrap_or_else(|| "<missing-handoff-id>".to_string());
+    let expected_hash =
+        approval_subject_hash(handoff).unwrap_or_else(|| "<missing-package-hash>".to_string());
+    let mut failures = Vec::new();
+
+    if subject_kind != "handoff_package" {
+        failures.push(format!(
+            "subject.kind must be handoff_package, got `{subject_kind}`"
+        ));
+    }
+    if subject_ref != expected_ref {
+        failures.push(format!(
+            "subject.ref `{subject_ref}` does not match handoff `{expected_ref}`"
+        ));
+    }
+    if subject_hash != expected_hash {
+        failures.push("subject.hash does not match the handoff package hash".to_string());
+    }
+    if decision != "approved" {
+        failures.push(format!("decision is `{decision}`"));
+    }
+    match parse_rfc3339_timestamp(&expires_at) {
+        Some(expires_at_time) if expires_at_time <= now => {
+            failures.push(format!("approval expired at `{expires_at}`"));
+        }
+        Some(_) => {}
+        None => failures.push(format!(
+            "approval expires_at `{expires_at}` must be RFC3339"
+        )),
+    }
+
+    let signature_fields = HumanApprovalSignatureFields {
+        approval_id: &approval_id,
+        subject_kind: &subject_kind,
+        subject_ref: &subject_ref,
+        subject_hash: &subject_hash,
+        decision: &decision,
+        approved_by: &approved_by,
+        approved_at: &approved_at,
+        expires_at: &expires_at,
+    };
+    let canonical_message = human_approval_signature_message(&signature_fields);
+    let key_lookup = approval_key_registry.lookup(&signer_ref);
+    let key_lookup_status = if key_lookup.is_some() {
+        "found"
+    } else {
+        "unknown"
+    };
+    let key_state = key_lookup
+        .map(|key| key.effective_state(now))
+        .unwrap_or("unknown");
+    let key_rotation_marker_count = key_lookup
+        .map(ApprovalKeyRef::rotation_marker_count)
+        .unwrap_or_default();
+    let signature_verified = key_lookup.is_some_and(|key| {
+        verify_human_approval_signature(
+            &key.public_key,
+            &signature_value,
+            canonical_message.as_bytes(),
+        )
+    });
+
+    if key_lookup_status != "found" {
+        failures.push(format!(
+            "approval key ref `{signer_ref}` is unknown in the registry"
+        ));
+    } else if key_state != "active" {
+        failures.push(format!(
+            "approval key ref `{signer_ref}` is not active ({key_state})"
+        ));
+    }
+    if !signature_verified {
+        failures.push("signature verification failed".to_string());
+    }
+
+    let status = if failures.is_empty() {
+        "passed"
+    } else {
+        "failed"
+    };
+    let state = human_approval_state(&expires_at, key_lookup_status, key_state, now);
+    let summary = if failures.is_empty() {
+        format!("Human approval {approval_id}: approved for handoff package {subject_ref}")
+    } else {
+        format!(
+            "Human approval {approval_id}: not accepted for planning checkpoint ({})",
+            failures.join("; ")
+        )
+    };
+
+    Ok(json!({
+        "kind": "human_approval",
+        "producer": "human-approval",
+        "ref": approval_id,
+        "hash": sha256_prefixed(bytes),
+        "status": status,
+        "state": state,
+        "summary": summary,
+        "metadata": {
+            "source": "--human-approval",
+            "source_format": "bolt.human_approval.v0.1",
+            "subject_kind": subject_kind,
+            "subject_ref": subject_ref,
+            "subject_hash": subject_hash,
+            "approved_at": approved_at,
+            "expires_at": expires_at,
+            "signer_ref": signer_ref,
+            "signature_algorithm": signature_algorithm,
+            "signature_verified": signature_verified.to_string(),
+            "key_lookup_status": key_lookup_status,
+            "key_state": key_state,
+            "key_rotation_marker_count": key_rotation_marker_count.to_string()
+        }
+    }))
+}
+
+fn approval_subject_hash(handoff: &Value) -> Option<String> {
+    string_at(handoff, &["idempotency", "payload_hash"])
+        .or_else(|| string_at(handoff, &["package", "package_hash"]))
+}
+
+fn human_approval_state(
+    expires_at: &str,
+    key_lookup_status: &str,
+    key_state: &str,
+    now: OffsetDateTime,
+) -> &'static str {
+    let Some(expires_at_time) = parse_rfc3339_timestamp(expires_at) else {
+        return "invalid";
+    };
+
+    if expires_at_time <= now || key_state == "expired" {
+        "expired"
+    } else if key_state == "revoked" {
+        "revoked"
+    } else if key_state == "invalid_time" {
+        "invalid"
+    } else if key_lookup_status != "found" {
+        "unknown"
+    } else {
+        "active"
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct ApprovalKeyRegistry {
+    keys: Vec<ApprovalKeyRef>,
+}
+
+impl ApprovalKeyRegistry {
+    fn load_optional(path: Option<&Path>) -> Result<Self> {
+        let Some(path) = path else {
+            return Ok(Self::default());
+        };
+        let source = fs::read_to_string(path).map_err(|source| Error::Io {
+            path: path.display().to_string(),
+            source,
+        })?;
+        let registry: Value =
+            serde_json::from_str(&source).map_err(|err| Error::InvalidHandoff {
+                message: format!("invalid approval key registry `{}`: {err}", path.display()),
+            })?;
+        Self::from_value(&registry, path)
+    }
+
+    fn from_value(registry: &Value, path: &Path) -> Result<Self> {
+        if string_at(registry, &["format"]).as_deref() != Some("bolt.approval_key_registry.v0.1") {
+            return Err(Error::InvalidHandoff {
+                message: format!(
+                    "approval key registry `{}` must use format bolt.approval_key_registry.v0.1",
+                    path.display()
+                ),
+            });
+        }
+
+        let keys = value_at(registry, &["keys"])
+            .and_then(Value::as_array)
+            .ok_or_else(|| Error::InvalidHandoff {
+                message: format!(
+                    "approval key registry `{}` must contain keys[]",
+                    path.display()
+                ),
+            })?;
+        if keys.is_empty() {
+            return Err(Error::InvalidHandoff {
+                message: format!(
+                    "approval key registry `{}` must contain at least one key",
+                    path.display()
+                ),
+            });
+        }
+
+        let mut seen_refs = HashSet::new();
+        let mut parsed_keys = Vec::with_capacity(keys.len());
+
+        for key in keys {
+            let public_key_ref = required_registry_string(key, &["public_key_ref"], path)?;
+            if !seen_refs.insert(public_key_ref.clone()) {
+                return Err(Error::InvalidHandoff {
+                    message: format!(
+                        "approval key registry `{}` contains duplicate public_key_ref `{public_key_ref}`",
+                        path.display()
+                    ),
+                });
+            }
+
+            let algorithm = required_registry_string(key, &["algorithm"], path)?;
+            if algorithm != "ed25519" {
+                return Err(Error::InvalidHandoff {
+                    message: format!(
+                        "approval key registry `{}` key `{public_key_ref}` algorithm must be ed25519",
+                        path.display()
+                    ),
+                });
+            }
+
+            let state = required_registry_string(key, &["state"], path)?;
+            if !matches!(state.as_str(), "active" | "revoked") {
+                return Err(Error::InvalidHandoff {
+                    message: format!(
+                        "approval key registry `{}` key `{public_key_ref}` state must be active or revoked",
+                        path.display()
+                    ),
+                });
+            }
+
+            let public_key = required_registry_string(key, &["public_key"], path)?;
+            if decode_prefixed_hex(&public_key, "ed25519:", 32).is_none() {
+                return Err(Error::InvalidHandoff {
+                    message: format!(
+                        "approval key registry `{}` key `{public_key_ref}` public_key must be ed25519:<32-byte hex>",
+                        path.display()
+                    ),
+                });
+            }
+            let not_before = required_registry_string(key, &["not_before"], path)?;
+            let expires_at = required_registry_string(key, &["expires_at"], path)?;
+            let revoked_at = string_at(key, &["revoked_at"]);
+            validate_canonical_utc_timestamp(
+                &not_before,
+                "not_before",
+                "approval key registry",
+                path,
+            )?;
+            validate_canonical_utc_timestamp(
+                &expires_at,
+                "expires_at",
+                "approval key registry",
+                path,
+            )?;
+            if let Some(revoked_at) = revoked_at.as_deref() {
+                validate_canonical_utc_timestamp(
+                    revoked_at,
+                    "revoked_at",
+                    "approval key registry",
+                    path,
+                )?;
+            }
+
+            parsed_keys.push(ApprovalKeyRef {
+                public_key_ref,
+                public_key,
+                state,
+                not_before: Some(not_before),
+                expires_at,
+                rotated_from: string_at(key, &["rotated_from"]),
+                rotated_to: string_at(key, &["rotated_to"]),
+                revoked_at,
+            });
+        }
+
+        Ok(Self { keys: parsed_keys })
+    }
+
+    fn lookup(&self, public_key_ref: &str) -> Option<&ApprovalKeyRef> {
+        self.keys
+            .iter()
+            .find(|key| key.public_key_ref == public_key_ref)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ApprovalKeyRef {
+    public_key_ref: String,
+    public_key: String,
+    state: String,
+    not_before: Option<String>,
+    expires_at: String,
+    rotated_from: Option<String>,
+    rotated_to: Option<String>,
+    revoked_at: Option<String>,
+}
+
+impl ApprovalKeyRef {
+    fn effective_state(&self, now: OffsetDateTime) -> &'static str {
+        if self.state == "revoked" || self.revoked_at.is_some() {
+            return "revoked";
+        }
+
+        let Some(expires_at) = parse_rfc3339_timestamp(&self.expires_at) else {
+            return "invalid_time";
+        };
+        if expires_at <= now {
+            return "expired";
+        }
+
+        if let Some(not_before) = &self.not_before {
+            let Some(not_before) = parse_rfc3339_timestamp(not_before) else {
+                return "invalid_time";
+            };
+            if not_before > now {
+                return "not_yet_valid";
+            }
+        }
+
+        "active"
+    }
+
+    fn rotation_marker_count(&self) -> usize {
+        self.rotated_from.iter().count() + self.rotated_to.iter().count()
+    }
+}
+
+struct HumanApprovalSignatureFields<'a> {
+    approval_id: &'a str,
+    subject_kind: &'a str,
+    subject_ref: &'a str,
+    subject_hash: &'a str,
+    decision: &'a str,
+    approved_by: &'a str,
+    approved_at: &'a str,
+    expires_at: &'a str,
+}
+
+fn human_approval_signature_message(fields: &HumanApprovalSignatureFields<'_>) -> String {
+    format!(
+        "bolt.human_approval.v0.1\napproval_id:{}\nsubject.kind:{}\nsubject.ref:{}\nsubject.hash:{}\ndecision:{}\napproved_by:{}\napproved_at:{}\nexpires_at:{}",
+        fields.approval_id,
+        fields.subject_kind,
+        fields.subject_ref,
+        fields.subject_hash,
+        fields.decision,
+        fields.approved_by,
+        fields.approved_at,
+        fields.expires_at,
+    )
+}
+
+fn verify_human_approval_signature(
+    public_key: &str,
+    signature_value: &str,
+    message: &[u8],
+) -> bool {
+    let Some(public_key_bytes) = decode_prefixed_hex(public_key, "ed25519:", 32) else {
+        return false;
+    };
+    let Some(signature_bytes) = decode_prefixed_hex(signature_value, "ed25519:", 64) else {
+        return false;
+    };
+
+    let Ok(public_key_array) = <[u8; 32]>::try_from(public_key_bytes.as_slice()) else {
+        return false;
+    };
+    let Ok(signature_array) = <[u8; 64]>::try_from(signature_bytes.as_slice()) else {
+        return false;
+    };
+    let Ok(verifying_key) = VerifyingKey::from_bytes(&public_key_array) else {
+        return false;
+    };
+    let signature = Signature::from_bytes(&signature_array);
+    verifying_key.verify(message, &signature).is_ok()
+}
+
+fn decode_prefixed_hex(value: &str, prefix: &str, expected_bytes: usize) -> Option<Vec<u8>> {
+    let hex = value.strip_prefix(prefix)?;
+    if hex.len() != expected_bytes * 2 {
+        return None;
+    }
+
+    let mut bytes = Vec::with_capacity(expected_bytes);
+    for chunk in hex.as_bytes().chunks_exact(2) {
+        let high = hex_nibble(chunk[0])?;
+        let low = hex_nibble(chunk[1])?;
+        bytes.push((high << 4) | low);
+    }
+    Some(bytes)
+}
+
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn required_approval_string(approval: &Value, path: &[&str], source_path: &Path) -> Result<String> {
+    string_at(approval, path)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| Error::InvalidHandoff {
+            message: format!(
+                "human approval `{}` is missing required string `{}`",
+                source_path.display(),
+                path.join(".")
+            ),
+        })
+}
+
+fn required_registry_string(registry: &Value, path: &[&str], source_path: &Path) -> Result<String> {
+    string_at(registry, path)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| Error::InvalidHandoff {
+            message: format!(
+                "approval key registry `{}` is missing required string `{}`",
+                source_path.display(),
+                path.join(".")
+            ),
+        })
+}
+
+fn validate_canonical_utc_timestamp(
+    value: &str,
+    field: &str,
+    source_kind: &str,
+    source_path: &Path,
+) -> Result<()> {
+    if is_canonical_utc_second_timestamp(value) {
+        return Ok(());
+    }
+
+    Err(Error::InvalidHandoff {
+        message: format!(
+            "{source_kind} `{}` field `{field}` must be UTC RFC3339 seconds like 2026-07-02T00:00:00Z",
+            source_path.display()
+        ),
+    })
+}
+
+fn is_canonical_utc_second_timestamp(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 20
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes[10] == b'T'
+        && bytes[13] == b':'
+        && bytes[16] == b':'
+        && bytes[19] == b'Z'
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            matches!(index, 4 | 7 | 10 | 13 | 16 | 19) || byte.is_ascii_digit()
+        })
+}
+
+fn required_manifest_string(manifest: &Value, path: &[&str], source_path: &Path) -> Result<String> {
+    string_at(manifest, path)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| Error::InvalidHandoff {
+            message: format!(
+                "Gear evidence manifest `{}` is missing required string `{}`",
+                source_path.display(),
+                path.join(".")
+            ),
+        })
+}
+
+fn required_string(report: &Value, path: &[&str], source_path: &Path) -> Result<String> {
+    string_at(report, path)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| Error::InvalidHandoff {
+            message: format!(
+                "evidence report `{}` is missing required string `{}`",
+                source_path.display(),
+                path.join(".")
+            ),
+        })
+}
+
+fn source_report_summary(report: &Value, report_id: &str, status: &str) -> String {
+    let errors = value_at(report, &["summary", "errors"])
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let warnings = value_at(report, &["summary", "warnings"])
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    format!(
+        "Wrench EvidenceReport {report_id}: status={status}, errors={errors}, warnings={warnings}"
+    )
 }
 
 fn derive_gates_from_evidence(report: &HandoffReport, payload: &Value) -> Vec<PlanGate> {
@@ -225,6 +1072,8 @@ fn derive_gates_from_evidence(report: &HandoffReport, payload: &Value) -> Vec<Pl
         "no unwaived high/critical risk detected",
     ));
 
+    gates.push(derive_wrench_report_gate(payload));
+
     // shared_capability_review_requested: skeleton gate (static, not yet wired)
     gates.push(gate_skeleton(
         "shared_capability_review_requested",
@@ -232,17 +1081,9 @@ fn derive_gates_from_evidence(report: &HandoffReport, payload: &Value) -> Vec<Pl
         "shared capability extraction review can be produced",
     ));
 
-    // Additional skeleton gates for future integrations.
-    gates.push(gate_skeleton(
-        "human_approval_checkpoint",
-        "pass",
-        "approval workflow not yet integrated",
-    ));
-    gates.push(gate_skeleton(
-        "artifact_supply_chain_verified",
-        "pass",
-        "artifact registry integration pending",
-    ));
+    // Additional gates for future integrations.
+    gates.push(derive_human_approval_checkpoint_gate(payload));
+    gates.push(derive_artifact_supply_chain_gate(payload));
     gates.push(gate_skeleton(
         "sovereignty_and_license_audit",
         "pass",
@@ -364,6 +1205,8 @@ fn validate_payload(payload: &Value) -> HandoffReport {
     );
     validate_package_hash(&mut findings, package_hash.as_deref());
     validate_artifact_integrity(payload, &mut findings);
+    validate_artifact_refs(payload, &mut findings);
+    validate_human_approval_refs(payload, &mut findings);
     validate_non_empty_array(
         &mut findings,
         payload,
@@ -397,6 +1240,7 @@ fn validate_payload(payload: &Value) -> HandoffReport {
     validate_capability_candidates(payload, &mut findings);
     validate_sovereignty(payload, &mut findings);
     validate_handoff_hash_conflict(payload, &mut findings);
+    validate_evidence_refs(payload, &mut findings);
     validate_execution_policy(payload, &mut findings);
 
     let requested_outputs = array_strings_at(payload, &["requested_outputs"]);
@@ -490,6 +1334,114 @@ fn validate_artifact_integrity(payload: &Value, findings: &mut Vec<HandoffFindin
                 .to_string(),
         ));
     }
+}
+
+fn validate_human_approval_refs(payload: &Value, findings: &mut Vec<HandoffFinding>) {
+    for approval_ref in array_at(payload, &["evidence_refs"])
+        .into_iter()
+        .filter(|evidence_ref| is_human_approval_ref(evidence_ref))
+    {
+        if !string_field(approval_ref, "hash").is_some_and(|hash| is_valid_sha256(&hash)) {
+            findings.push(error(
+                "invalid_human_approval_hash",
+                "human approval evidence hash must be sha256:<64 hex chars>".to_string(),
+            ));
+        }
+
+        let key_lookup_status =
+            value_at(approval_ref, &["metadata", "key_lookup_status"]).and_then(Value::as_str);
+        if key_lookup_status != Some("found") {
+            findings.push(error(
+                "human_approval_key_unknown",
+                "human approval public_key_ref must resolve in the approval key registry"
+                    .to_string(),
+            ));
+        } else if value_at(approval_ref, &["metadata", "key_state"]).and_then(Value::as_str)
+            != Some("active")
+        {
+            findings.push(error(
+                "human_approval_key_not_active",
+                "human approval public_key_ref must resolve to an active, non-revoked, non-expired key"
+                    .to_string(),
+            ));
+        }
+
+        if value_at(approval_ref, &["metadata", "signature_verified"]).and_then(Value::as_str)
+            != Some("true")
+        {
+            findings.push(error(
+                "human_approval_signature_invalid",
+                "human approval signature must verify against the registered Ed25519 approval key"
+                    .to_string(),
+            ));
+        }
+
+        if string_field(approval_ref, "status").as_deref() != Some("passed") {
+            findings.push(error(
+                "human_approval_not_approved",
+                format!(
+                    "human approval status must be passed, got `{}`",
+                    string_field(approval_ref, "status")
+                        .as_deref()
+                        .unwrap_or("<missing>")
+                ),
+            ));
+        }
+
+        if string_field(approval_ref, "state").as_deref() != Some("active") {
+            findings.push(error(
+                "human_approval_not_active",
+                format!(
+                    "human approval state must be active, got `{}`",
+                    string_field(approval_ref, "state")
+                        .as_deref()
+                        .unwrap_or("<missing>")
+                ),
+            ));
+        }
+    }
+}
+
+fn validate_artifact_refs(payload: &Value, findings: &mut Vec<HandoffFinding>) {
+    for artifact_ref in array_at(payload, &["artifact_refs"]) {
+        if !string_field(artifact_ref, "artifact_hash").is_some_and(|hash| is_valid_sha256(&hash)) {
+            findings.push(error(
+                "invalid_artifact_hash",
+                "artifact_refs[].artifact_hash must be sha256:<64 hex chars>".to_string(),
+            ));
+        }
+
+        if !artifact_state_allows_planning(string_field(artifact_ref, "state").as_deref()) {
+            findings.push(error(
+                "artifact_not_active",
+                format!(
+                    "artifact ref state must be active when present, got `{}`",
+                    string_field(artifact_ref, "state")
+                        .as_deref()
+                        .unwrap_or("<missing>")
+                ),
+            ));
+        }
+    }
+}
+
+fn parse_rfc3339_timestamp(value: &str) -> Option<OffsetDateTime> {
+    OffsetDateTime::parse(value, &Rfc3339).ok()
+}
+
+fn sha256_prefixed(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    format!("sha256:{}", to_lower_hex(&digest))
+}
+
+fn to_lower_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    encoded
 }
 
 fn is_valid_sha256(value: &str) -> bool {
@@ -606,6 +1558,184 @@ fn validate_handoff_hash_conflict(payload: &Value, findings: &mut Vec<HandoffFin
             "same handoff_id was previously associated with a different payload hash".to_string(),
         ));
     }
+}
+
+fn validate_evidence_refs(payload: &Value, findings: &mut Vec<HandoffFinding>) {
+    for evidence_ref in array_at(payload, &["evidence_refs"])
+        .into_iter()
+        .filter(|evidence_ref| is_wrench_evidence_ref(evidence_ref))
+    {
+        validate_evidence_hash(evidence_ref, "hash", findings);
+        validate_wrench_evidence_status(evidence_ref, "status", findings);
+    }
+
+    for report_ref in array_at(payload, &["wrench_report_refs"]) {
+        validate_evidence_hash(report_ref, "report_hash", findings);
+        validate_wrench_evidence_status(report_ref, "status", findings);
+    }
+}
+
+fn validate_evidence_hash(
+    evidence_ref: &Value,
+    hash_field: &str,
+    findings: &mut Vec<HandoffFinding>,
+) {
+    if !string_field(evidence_ref, hash_field).is_some_and(|hash| is_valid_sha256(&hash)) {
+        findings.push(error(
+            "invalid_evidence_hash",
+            format!("Wrench evidence `{hash_field}` must be sha256:<64 hex chars>"),
+        ));
+    }
+}
+
+fn validate_wrench_evidence_status(
+    evidence_ref: &Value,
+    status_field: &str,
+    findings: &mut Vec<HandoffFinding>,
+) {
+    let status = string_field(evidence_ref, status_field);
+    if !wrench_status_allows_planning(status.as_deref()) {
+        findings.push(error(
+            "wrench_evidence_not_passing",
+            format!(
+                "Wrench evidence status must be passed or warning, got `{}`",
+                status.as_deref().unwrap_or("<missing>")
+            ),
+        ));
+    }
+}
+
+fn derive_human_approval_checkpoint_gate(payload: &Value) -> PlanGate {
+    let allow_execution = bool_at(payload, &["execution_policy", "allow_execution"]);
+    let requires_approval = bool_at(
+        payload,
+        &["execution_policy", "requires_human_approval_for_execution"],
+    );
+
+    if allow_execution == Some(true) {
+        return gate(
+            "human_approval_checkpoint",
+            "blocked",
+            "execution is requested; human approval workflow is not integrated in P0",
+        );
+    }
+
+    let approval_refs: Vec<&Value> = array_at(payload, &["evidence_refs"])
+        .into_iter()
+        .filter(|evidence_ref| is_human_approval_ref(evidence_ref))
+        .collect();
+    if !approval_refs.is_empty() {
+        let all_refs_ok = approval_refs.iter().all(|approval_ref| {
+            string_field(approval_ref, "hash").is_some_and(|hash| is_valid_sha256(&hash))
+                && string_field(approval_ref, "status").as_deref() == Some("passed")
+                && string_field(approval_ref, "state").as_deref() == Some("active")
+                && value_at(approval_ref, &["metadata", "key_lookup_status"])
+                    .and_then(Value::as_str)
+                    == Some("found")
+                && value_at(approval_ref, &["metadata", "key_state"]).and_then(Value::as_str)
+                    == Some("active")
+                && value_at(approval_ref, &["metadata", "signature_verified"])
+                    .and_then(Value::as_str)
+                    == Some("true")
+        });
+        return gate(
+            "human_approval_checkpoint",
+            if all_refs_ok { "pass" } else { "blocked" },
+            "human approval refs are present, registry-backed, active, approved, and hash-pinned",
+        );
+    }
+
+    gate(
+        "human_approval_checkpoint",
+        if requires_approval == Some(true) {
+            "pass"
+        } else {
+            "blocked"
+        },
+        "human approval is explicitly required before any future execution",
+    )
+}
+
+fn derive_artifact_supply_chain_gate(payload: &Value) -> PlanGate {
+    let artifact_refs = array_at(payload, &["artifact_refs"]);
+    if artifact_refs.is_empty() {
+        return gate_skeleton(
+            "artifact_supply_chain_verified",
+            "pass",
+            "artifact registry integration pending",
+        );
+    }
+
+    let all_refs_ok = artifact_refs.iter().all(|artifact_ref| {
+        string_field(artifact_ref, "artifact_hash").is_some_and(|hash| is_valid_sha256(&hash))
+            && artifact_state_allows_planning(string_field(artifact_ref, "state").as_deref())
+    });
+
+    gate(
+        "artifact_supply_chain_verified",
+        if all_refs_ok { "pass" } else { "blocked" },
+        "Gear artifact refs are present, active when state is declared, and hash-pinned",
+    )
+}
+
+fn derive_wrench_report_gate(payload: &Value) -> PlanGate {
+    let evidence_refs = array_at(payload, &["evidence_refs"]);
+    let wrench_evidence_refs: Vec<&Value> = evidence_refs
+        .into_iter()
+        .filter(|evidence_ref| is_wrench_evidence_ref(evidence_ref))
+        .collect();
+    let wrench_report_refs = array_at(payload, &["wrench_report_refs"]);
+
+    if wrench_evidence_refs.is_empty() && wrench_report_refs.is_empty() {
+        return gate_skeleton(
+            "wrench_report_passed",
+            "pass",
+            "Wrench evidence ref integration pending for this handoff",
+        );
+    }
+
+    let all_generic_refs_ok = wrench_evidence_refs.iter().all(|evidence_ref| {
+        string_field(evidence_ref, "hash").is_some_and(|hash| is_valid_sha256(&hash))
+            && wrench_status_allows_planning(string_field(evidence_ref, "status").as_deref())
+    });
+    let all_report_refs_ok = wrench_report_refs.iter().all(|report_ref| {
+        string_field(report_ref, "report_hash").is_some_and(|hash| is_valid_sha256(&hash))
+            && wrench_status_allows_planning(string_field(report_ref, "status").as_deref())
+    });
+
+    gate(
+        "wrench_report_passed",
+        if all_generic_refs_ok && all_report_refs_ok {
+            "pass"
+        } else {
+            "blocked"
+        },
+        "Wrench evidence refs are present, hash-pinned, and not failed/quarantined",
+    )
+}
+
+fn is_human_approval_ref(evidence_ref: &Value) -> bool {
+    string_field(evidence_ref, "kind")
+        .unwrap_or_default()
+        .eq_ignore_ascii_case("human_approval")
+}
+
+fn is_wrench_evidence_ref(evidence_ref: &Value) -> bool {
+    let kind = string_field(evidence_ref, "kind")
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let producer = string_field(evidence_ref, "producer")
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    kind.contains("wrench") || producer == "wrench-inspect"
+}
+
+fn wrench_status_allows_planning(status: Option<&str>) -> bool {
+    matches!(status, Some("passed") | Some("warning"))
+}
+
+fn artifact_state_allows_planning(state: Option<&str>) -> bool {
+    matches!(state, None | Some("active"))
 }
 
 fn has_accepted_waiver(payload: &Value) -> bool {
@@ -814,10 +1944,96 @@ mod tests {
         );
     }
 
+    fn with_wrench_evidence_status(status: &str) -> String {
+        valid_payload().replace(
+            "\"execution_policy\":",
+            &format!(
+                "\"evidence_refs\":[{{\"kind\":\"wrench.evidence_report.v0.1\",\"producer\":\"wrench-inspect\",\"hash\":\"sha256:3333333333333333333333333333333333333333333333333333333333333333\",\"status\":\"{status}\",\"summary\":\"Portal evidence report\"}}],\"execution_policy\":"
+            ),
+        )
+    }
+
+    #[test]
+    fn accepts_passed_wrench_evidence_ref() {
+        let payload = with_wrench_evidence_status("passed");
+        let report = validate_str(&payload).unwrap();
+        assert!(report.is_valid(), "{:#?}", report.findings);
+
+        let plan = plan_from_payload(&payload);
+        let gate = plan
+            .gates
+            .iter()
+            .find(|g| g.code == "wrench_report_passed")
+            .expect("wrench_report_passed gate should exist");
+        assert_eq!(gate.status, "pass");
+        assert!(!gate.detail.contains("skeleton"));
+    }
+
+    #[test]
+    fn rejects_failed_wrench_evidence_ref() {
+        let payload = with_wrench_evidence_status("failed");
+        let report = validate_str(&payload).unwrap();
+        assert!(!report.is_valid());
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "wrench_evidence_not_passing")
+        );
+
+        let plan = plan_from_payload(&payload);
+        let gate = plan
+            .gates
+            .iter()
+            .find(|g| g.code == "wrench_report_passed")
+            .expect("wrench_report_passed gate should exist");
+        assert_eq!(gate.status, "blocked");
+        assert!(plan.tasks.is_empty());
+    }
+
+    #[test]
+    fn rejects_quarantined_wrench_evidence_ref() {
+        let payload = with_wrench_evidence_status("quarantined");
+        let report = validate_str(&payload).unwrap();
+        assert!(!report.is_valid());
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "wrench_evidence_not_passing")
+        );
+    }
+
     fn plan_from_payload(payload_str: &str) -> DryRunPlan {
         let payload: Value = serde_json::from_str(payload_str).unwrap();
         let report = validate_payload(&payload);
         dry_run_plan_from_report_and_payload(&report, &payload)
+    }
+
+    #[test]
+    fn human_approval_checkpoint_passes_when_future_execution_requires_approval() {
+        let payload = valid_payload();
+        let plan = plan_from_payload(&payload);
+        let gate = plan
+            .gates
+            .iter()
+            .find(|g| g.code == "human_approval_checkpoint")
+            .expect("human_approval_checkpoint gate should exist");
+        assert_eq!(gate.status, "pass");
+        assert!(!gate.detail.contains("skeleton"));
+    }
+
+    #[test]
+    fn human_approval_checkpoint_blocks_when_execution_is_requested() {
+        let payload =
+            valid_payload().replace("\"allow_execution\":false", "\"allow_execution\":true");
+        let plan = plan_from_payload(&payload);
+        let gate = plan
+            .gates
+            .iter()
+            .find(|g| g.code == "human_approval_checkpoint")
+            .expect("human_approval_checkpoint gate should exist");
+        assert_eq!(gate.status, "blocked");
     }
 
     #[test]
@@ -871,5 +2087,23 @@ mod tests {
             plan1.gates, plan2.gates,
             "gates must vary when handoff content differs"
         );
+    }
+
+    #[test]
+    fn approval_key_state_refuses_invalid_expiry_timestamp() {
+        let key = ApprovalKeyRef {
+            public_key_ref: "human-operator-demo-key-01".to_string(),
+            public_key: "ed25519:0000000000000000000000000000000000000000000000000000000000000000"
+                .to_string(),
+            state: "active".to_string(),
+            not_before: None,
+            expires_at: "not-a-timestamp".to_string(),
+            rotated_from: None,
+            rotated_to: None,
+            revoked_at: None,
+        };
+        let now = parse_rfc3339_timestamp("2026-07-02T00:00:00Z").unwrap();
+
+        assert_eq!(key.effective_state(now), "invalid_time");
     }
 }
