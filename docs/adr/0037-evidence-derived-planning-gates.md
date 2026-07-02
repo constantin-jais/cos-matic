@@ -86,14 +86,16 @@ Gates are verified through fixture-driven tests:
 
 ## Implementation notes
 
-`crates/orchestrator/src/planning_gates.rs` defines the gate struct, the derive
-function, and evidence-collection helpers.
+`crates/core/src/handoff.rs` derives the first handoff planning gates from observable handoff content. `bolt-cosmatic handoff plan --evidence-report <report.json>` can project a local `wrench.evidence_report.v0.1` file into a hash-backed Wrench evidence ref for the dry-run plan.
 
-The Wrench risk report integration is not yet in scope; when it arrives, risk
-gates will read from that source. Until then, risk gates remain skeleton.
+`bolt-cosmatic handoff plan --evidence-manifest <manifest.json>` can also project a Gear `ArtifactManifest` for a Wrench evidence report into ephemeral `evidence_refs[]` and `artifact_refs[]`. Bolt checks only manifest metadata needed for planning gates: `inspection_report`, `wrench-inspect`, active artifact state when present, and SHA-256 hashes. It does not store report or artifact bodies and does not interpret Wrench findings.
+
+`human_approval_checkpoint` is content-derived from the handoff execution policy and optional `bolt.human_approval.v0.1` approval contracts. P0 plans pass when future execution explicitly requires human approval; if approval contracts are supplied, they must be approved, active, Ed25519-signature-verified through `public_key_ref` lookup in a `bolt.approval_key_registry.v0.1` registry, and anchored to the handoff package hash. The registry supports parallel active keys for rotation and refuses unknown, revoked, not-yet-valid, or expired keys. `allow_execution=true` still blocks because P0 never executes.
+
+Wrench risk report integration beyond generic pass/fail evidence status is not yet in scope; when it arrives, risk gates will read normalized Wrench checks rather than raw report bodies.
 
 ## Non-goals
 
-- Does not implement human approval loops or policy evaluations.
+- Does not implement interactive approval loops or durable/external key registry publication; the P0 registry is a local JSON contract consumed during planning.
 - Does not integrate with external policy engines.
 - Does not implement scoring or soft-gating (gates are hard: pass/fail/warn).

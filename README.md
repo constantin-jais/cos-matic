@@ -146,6 +146,20 @@ bolt-cosmatic stack adr_generate --title "Decision" --accepted-decision-ref "dec
 bolt-cosmatic stack deploy_dry_run --root . --cmd "cargo test --workspace --all-targets" --json
 ```
 
+Planning-only handoffs can also consume Wrench EvidenceReport files, Gear manifests, or signed human approval contracts as ephemeral refs. Human approvals are verified through a local approval key registry lookup by `public_key_ref`; unknown, revoked, or expired keys refuse the checkpoint. Bolt reads only status/hash/provenance metadata to derive `evidence_refs[]`/`artifact_refs[]` and gate status; it does not store report, artifact, or approval bodies in its plan:
+
+```sh
+bolt-cosmatic handoff plan handoff.json --dry-run --json \
+  --evidence-report wrench-portal-evidence.json
+
+bolt-cosmatic handoff plan handoff.json --dry-run --json \
+  --evidence-manifest gear-wrench-evidence-manifest.json
+
+bolt-cosmatic handoff plan handoff.json --dry-run --json \
+  --human-approval human-approval.json \
+  --approval-key-registry approval-key-registry.json
+```
+
 They are designed for scorecards, gates, fixtures, ADR drafts, and dry-runs only: no provisioning, no provider activation, no remote secrets, and no automatic ADR acceptance.
 
 This repository dogfoods `harness.toml` to generate `AGENTS.md`, `CLAUDE.md`,

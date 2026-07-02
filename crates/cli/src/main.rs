@@ -155,6 +155,10 @@ fn main() -> miette::Result<()> {
             HandoffAction::Plan {
                 payload,
                 dry_run,
+                evidence_reports,
+                evidence_manifests,
+                human_approvals,
+                approval_key_registry,
                 json,
             } => {
                 if !dry_run {
@@ -162,7 +166,13 @@ fn main() -> miette::Result<()> {
                         "handoff plan requires --dry-run; implementation execution is forbidden in MVP"
                     ));
                 }
-                let plan = bolt_cos_matic::handoff::dry_run_plan_file(&payload)?;
+                let plan = bolt_cos_matic::handoff::dry_run_plan_file_with_evidence_sources_and_approval_keys(
+                    &payload,
+                    &evidence_reports,
+                    &evidence_manifests,
+                    &human_approvals,
+                    approval_key_registry.as_deref(),
+                )?;
                 if json {
                     println!("{}", serde_json::to_string_pretty(&plan).into_diagnostic()?);
                 } else {

@@ -46,6 +46,7 @@ See [`docs/versioning.md`](docs/versioning.md) for the version typology.
 - release provenance, checksums, and SBOM for published artifacts;
 - keyless/OIDC publishing where registries support it;
 - stronger policy isolation for live automation;
+- promote the local approval key registry contract to a durable audited registry before trusted execution;
 - broader Wrench/Gear integrations only when boundaries remain explicit;
 - hosted or multi-agent operation only after audit, recovery, and privacy controls are proven;
 - broader stack automation only after the P0 helpers are deterministic, testable, and covered by refusal/safe-write evidence.
