@@ -32,11 +32,13 @@ doubles as teaching material. Format: context / decision / consequences.
 | [0025](0025-north-star-trustworthy-autonomy.md)                 | North-star: trustworthy, self-hostable autonomous code-ops                |
 | [0026](0026-architecture-targets-seams-isolation-durability.md) | Architecture targets: Forge + FixerRuntime seams, isolation, durability   |
 | [0027](0027-orchestrator-consolidated-on-octocrab.md)           | Orchestrator consolidated on octocrab (kill the `gh` calls)               |
-| [0028](0028-init-onboarding-wizard.md)                          | Interactive wizard for L0–L3 onboarding (`bolt-cosmatic init`)                      |
+| [0028](0028-init-onboarding-wizard.md)                          | Interactive wizard for L0–L3 onboarding (`bolt-cosmatic init`)            |
 | [0029](0029-portability-rust-core-bind-not-reimplement.md)      | Portability: one Rust core, bind don't reimplement                        |
 | [0030](0030-distribution-doctrine-append-only.md)               | Distribution doctrine: append-only, forward-only, compensate-not-rollback |
 | [0031](0031-supply-chain-and-sovereignty.md)                    | Supply-chain (keyless) + sovereign store-free floor per platform          |
 | [0032](0032-native-ui-and-binding-matrix.md)                    | Native UI per platform + binding matrix over the core                     |
 | [0033](0033-rust-core-doctrine-hardening.md)                    | Rust-core doctrine hardening from legacy agent config                     |
-| [0034](0034-bolt-cos-matic-and-bolt-harness-split.md)           | Rename to Bolt-Cos-Matic and split Bolt Harness                          |
+| [0034](0034-bolt-cos-matic-and-bolt-harness-split.md)           | Rename to Bolt-Cos-Matic and split Bolt Harness                           |
 | [0035](0035-bounded-branch-owning-autonomy.md)                  | Bounded branch-owning autonomy                                            |
+| [0036](0036-orchestration-authorization-model.md)               | Biscuit delegation-chain verification in handoff validation               |
+| [0037](0037-evidence-derived-planning-gates.md)                 | Planning gates derived from handoff and Wrench evidence                   |
