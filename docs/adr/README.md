@@ -42,3 +42,4 @@ doubles as teaching material. Format: context / decision / consequences.
 | [0035](0035-bounded-branch-owning-autonomy.md)                  | Bounded branch-owning autonomy                                            |
 | [0036](0036-orchestration-authorization-model.md)               | Biscuit delegation-chain verification in handoff validation               |
 | [0037](0037-evidence-derived-planning-gates.md)                 | Planning gates derived from handoff and Wrench evidence                   |
+| [0038](0038-solo-maintainer-branch-governance.md)               | Solo-maintainer governance: protected `main` with mandatory checks        |
